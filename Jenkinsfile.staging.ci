@@ -1,0 +1,38 @@
+pipeline{
+    agent any
+
+    stages{
+        stage("Fetch code"){
+            steps{
+                git branch: 'staging', url: 'https://github.com/nschiau/eventApp-backend.git' 
+            }
+        }
+
+        stage('Restore') {
+            steps {
+                sh 'dotnet restore src/EventHorizon.Api/EventHorizon.Api.csproj'
+            }
+        }
+        stage('Build') {
+            steps {
+                sh 'dotnet build --no-restore src/EventHorizon.Api/EventHorizon.Api.csproj --configuration Release'
+            }
+        }
+        stage('Test') {
+            steps {
+                sh 'dotnet test --no-build --verbosity normal tests/EventHorizon.Api.Tests/EventHorizon.Api.Tests.csproj'
+            }
+        }
+
+        stage('Deliver') { 
+            steps {
+                sh 'dotnet publish src/EventHorizon.Api/EventHorizon.Api.csproj --no-restore -c Release -o published'
+            }
+            post {
+                success {
+                    archiveArtifacts 'published/*.*' 
+                }
+            }
+        }
+    }
+}
