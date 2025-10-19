@@ -1,5 +1,14 @@
 pipeline{
     agent any
+    //  triggers {
+    //     // Poll Repo B every 5 minutes
+    //     pollSCM('H/5 * * * *')
+    // }
+    environment {
+        DOCKERHUB_CREDENTIALS = 'dockerhub-token'        // Jenkins credentials ID
+        IMAGE_NAME = 'nschiau/eventapp' // Replace with your Docker Hub repo
+        IMAGE_TAG = ''
+    }
 
     stages{
         stage("Fetch code"){
@@ -31,6 +40,29 @@ pipeline{
             post {
                 success {
                     archiveArtifacts 'published/*.*' 
+                }
+            }
+        }
+
+        stage('Build Docker Image') {
+            steps {
+                script {
+                    // Define your full image name (repo + tag)
+                    def image = docker.build(
+                        "nschiau/eventapp:${BUILD_NUMBER}",
+                        "-f src/EventHorizon.Api/Dockerfile ."
+                    )
+                    IMAGE_TAG = image
+                }
+            }
+        }
+
+        stage('Push to Docker Hub') {
+            steps {
+                script {
+                    docker.withRegistry( '', DOCKERHUB_CREDENTIALS ) {
+                        IMAGE_TAG.push()
+                    }
                 }
             }
         }
