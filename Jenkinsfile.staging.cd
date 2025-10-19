@@ -1,0 +1,48 @@
+pipeline {
+    agent any
+
+    environment {
+        SSH_CRED = 'staging-ssh'                    // SSH key credential ID
+        DOCKER_CRED = 'dockerhub-token'             // Docker Hub credential ID
+        REMOTE_USER = 'vagrant'                     // user on staging box
+        REMOTE_HOST = '192.168.10.16'               // staging box IP
+        DOCKER_IMAGE = 'nschiau/eventapp:be-staging' // full image name:tag
+        CONTAINER_NAME = 'eventapp-be'
+        PORT = '8080'
+    }
+
+    stages {
+        stage('Deploy to Staging') {
+            steps {
+                sshagent (credentials: ["${SSH_CRED}"]) {
+                    withCredentials([usernamePassword(credentialsId: "${DOCKER_CRED}", usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
+                        sh """
+                        ssh -o StrictHostKeyChecking=no ${REMOTE_USER}@${REMOTE_HOST} '
+                            echo "$DOCKER_PASS" | docker login -u "$DOCKER_USER" --password-stdin &&
+                            echo "Logged into Docker Hub" &&
+                            docker pull ${DOCKER_IMAGE} &&
+                            echo "Pulled image ${DOCKER_IMAGE}" &&
+                            docker stop ${CONTAINER_NAME} || true &&
+                            docker rm ${CONTAINER_NAME} || true &&
+                            echo "Old container removed (if existed)" &&
+                            docker run -d --name ${CONTAINER_NAME} -p ${PORT}:8080 ${DOCKER_IMAGE} &&
+                            docker logout &&
+                            echo "Successfully deployed ${DOCKER_IMAGE} on port ${PORT}"
+                        '
+                        """
+                    }
+                }
+            }
+        }
+    }
+
+    post {
+        success {
+            echo "Deployment to staging successful."
+        }
+        failure {
+            echo "Deployment failed."
+        }
+    }
+}
+
