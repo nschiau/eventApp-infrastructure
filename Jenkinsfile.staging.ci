@@ -48,10 +48,12 @@ pipeline{
             steps {
                 script {
                     // Define your full image name (repo + tag)
+                    def tag = "be-staging-${BUILD_NUMBER}"
+
+                    // Build image with branch-specific tag
                     def image = docker.build(
-                        "nschiau/eventapp:${BUILD_NUMBER}",
-                        "-f src/EventHorizon.Api/Dockerfile ."
-                    )
+                        "${IMAGE_NAME}:${tag}", 
+                        "-f src/EventHorizon.Api/Dockerfile .")
                     IMAGE_TAG = image
                 }
             }
@@ -62,6 +64,7 @@ pipeline{
                 script {
                     docker.withRegistry( '', DOCKERHUB_CREDENTIALS ) {
                         IMAGE_TAG.push()
+                        IMAGE_TAG.push("be-staging")
                     }
                 }
             }
