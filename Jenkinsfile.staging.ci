@@ -1,4 +1,4 @@
-pipeline{
+pipeline {
     agent any
     //  triggers {
     //     // Poll Repo B every 5 minutes
@@ -10,10 +10,10 @@ pipeline{
         IMAGE_TAG = ''
     }
 
-    stages{
-        stage("Fetch code"){
-            steps{
-                git branch: 'staging', url: 'https://github.com/nschiau/eventApp-backend.git' 
+    stages {
+        stage('Fetch code') {
+            steps {
+                git branch: 'staging', url: 'https://github.com/nschiau/eventApp-backend.git'
             }
         }
 
@@ -33,13 +33,13 @@ pipeline{
             }
         }
 
-        stage('Deliver') { 
+        stage('Deliver') {
             steps {
                 sh 'dotnet publish src/EventHorizon.Api/EventHorizon.Api.csproj --no-restore -c Release -o published'
             }
             post {
                 success {
-                    archiveArtifacts 'published/*.*' 
+                    archiveArtifacts 'published/*.*'
                 }
             }
         }
@@ -52,8 +52,8 @@ pipeline{
 
                     // Build image with branch-specific tag
                     def image = docker.build(
-                        "${IMAGE_NAME}:${tag}", 
-                        "-f src/EventHorizon.Api/Dockerfile .")
+                        "${IMAGE_NAME}:${tag}",
+                        '-f src/EventHorizon.Api/Dockerfile .')
                     IMAGE_TAG = image
                 }
             }
@@ -62,12 +62,19 @@ pipeline{
         stage('Push to Docker Hub') {
             steps {
                 script {
-                    docker.withRegistry( '', DOCKERHUB_CREDENTIALS ) {
+                    /* groovylint-disable-next-line NestedBlockDepth */
+                    docker.withRegistry('', DOCKERHUB_CREDENTIALS) {
                         IMAGE_TAG.push()
-                        IMAGE_TAG.push("be-staging")
+                        IMAGE_TAG.push('be-staging')
                     }
                 }
             }
+                post {
+                success {
+                    echo 'Image pushed to Docker Hub successfully.'
+                    build job: 'eventApp-cd-staging'
+                }
+                }
         }
     }
 }
