@@ -1,0 +1,78 @@
+pipeline {
+    agent any
+
+    environment {
+        DOCKERHUB_CREDENTIALS = 'dockerhub-token'        // Jenkins credentials ID
+        IMAGE_NAME = 'nschiau/eventapp' // Replace with your Docker Hub repo
+        IMAGE_TAG = ''
+    }
+
+    stages {
+        stage('Fetch code') {
+            steps {
+                git branch: 'staging', url: 'https://github.com/nschiau/eventApp-frontend.git'
+            }
+        }
+
+        stage('Install Dependencies') {
+            steps {
+                sh 'npm install'
+            }
+        }
+
+        stage('Build') {
+            steps {
+                sh 'npm run build'
+            }
+        }
+
+        stage('Build Docker Image') {
+            steps {
+                script {
+                    // Generate unique tag based on build number
+                    def tag = "fe-staging-${BUILD_NUMBER}"
+
+                    // Build Docker image using your Dockerfile (assumed at repo root)
+                    def image = docker.build(
+                        "${IMAGE_NAME}:${tag}",
+                        '.'
+                    )
+
+                    // Store image reference for next stage
+                    IMAGE_TAG = image
+                }
+            }
+        }
+
+        stage('Push to Docker Hub') {
+            steps {
+                script {
+                    docker.withRegistry('', DOCKERHUB_CREDENTIALS) {
+                        IMAGE_TAG.push()
+                        IMAGE_TAG.push('fe-staging')
+                    }
+                }
+            }
+            post {
+                success {
+                    echo 'Frontend image pushed to Docker Hub successfully.'
+                    // Optionally trigger the deployment pipeline
+                    // build job: 'eventApp-cd-staging'
+                }
+            }
+        }
+    }
+
+    post {
+        always {
+            echo 'Cleaning workspace...'
+            cleanWs()
+        }
+        success {
+            echo 'Frontend CI pipeline completed successfully.'
+        }
+        failure {
+            echo 'Frontend CI pipeline failed.'
+        }
+    }
+}
