@@ -15,13 +15,12 @@ pipeline {
     }
 
     stages {
-
         /* ---------------------------------------- *
          * 1️⃣ LOGIN TO DOCKER HUB
          * ---------------------------------------- */
         stage('Login to Docker Hub') {
             steps {
-                sshagent (credentials: ["${SSH_CRED}"]) {
+                sshagent(credentials: ["${SSH_CRED}"]) {
                     withCredentials([usernamePassword(credentialsId: "${DOCKER_CRED}", usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
                         sh """
                         ssh -o StrictHostKeyChecking=no ${REMOTE_USER}@${REMOTE_HOST} '
@@ -39,7 +38,7 @@ pipeline {
         * ---------------------------------------- */
         stage('Setup Network') {
             steps {
-                sshagent (credentials: ["${SSH_CRED}"]) {
+                sshagent(credentials: ["${SSH_CRED}"]) {
                     sh """
                     ssh -o StrictHostKeyChecking=no ${REMOTE_USER}@${REMOTE_HOST} '
                         echo "🔹 Creating Docker network if not exists..."
@@ -55,25 +54,25 @@ pipeline {
         * ---------------------------------------- */
         stage('Setup Database') {
             steps {
-                sshagent (credentials: ["${SSH_CRED}"]) {
+                sshagent(credentials: ["${SSH_CRED}"]) {
                     sh """
-                    ssh -o StrictHostKeyChecking=no ${REMOTE_USER}@${REMOTE_HOST} '
-                        echo "🔹 Checking PostgreSQL container..."
-                        if [ ! "$(docker ps -aq -f name=${DB_CONTAINER})" ]; then
-                            echo "⚙️ Creating PostgreSQL container..."
-                            docker run -d \\
-                                --name ${DB_CONTAINER} \\
-                                --network ${NETWORK} \\
-                                -v ${DB_VOLUME}:/var/lib/postgresql/data \\
-                                -e POSTGRES_USER=postgres \\
-                                -e POSTGRES_PASSWORD=postgres \\
-                                -e POSTGRES_DB=eventhorizon \\
-                                postgres:16
-                        else
-                            echo "ℹ️ PostgreSQL container already exists — starting if stopped."
-                            docker start ${DB_CONTAINER} || true
-                        fi
-                    '
+                        ssh -o StrictHostKeyChecking=no ${REMOTE_USER}@${REMOTE_HOST} << 'EOF'
+                            echo "🔹 Checking PostgreSQL container..."
+                            if [ -z "\$(docker ps -aq -f name=${DB_CONTAINER})" ]; then
+                                echo "⚙️ Creating PostgreSQL container..."
+                                docker run -d \\
+                                    --name ${DB_CONTAINER} \\
+                                    --network ${NETWORK} \\
+                                    -v ${DB_VOLUME}:/var/lib/postgresql/data \\
+                                    -e POSTGRES_USER=postgres \\
+                                    -e POSTGRES_PASSWORD=postgres \\
+                                    -e POSTGRES_DB=eventhorizon \\
+                                    postgres:16
+                            else
+                                echo "ℹ️ PostgreSQL container already exists — starting if stopped."
+                                docker start ${DB_CONTAINER} || true
+                            fi
+                        EOF
                     """
                 }
             }
@@ -84,7 +83,7 @@ pipeline {
          * ---------------------------------------- */
         stage('Initialize Database') {
             steps {
-                sshagent (credentials: ["${SSH_CRED}"]) {
+                sshagent(credentials: ["${SSH_CRED}"]) {
                     withCredentials([usernamePassword(credentialsId: "${DOCKER_CRED}", usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
                         sh """
                         ssh -o StrictHostKeyChecking=no ${REMOTE_USER}@${REMOTE_HOST} '
@@ -124,7 +123,7 @@ pipeline {
          * ---------------------------------------- */
         stage('Deploy Backend App') {
             steps {
-                sshagent (credentials: ["${SSH_CRED}"]) {
+                sshagent(credentials: ["${SSH_CRED}"]) {
                     sh """
                     ssh -o StrictHostKeyChecking=no ${REMOTE_USER}@${REMOTE_HOST} '
                         echo "🔹 Stopping old backend container (if exists)..."
@@ -151,7 +150,7 @@ pipeline {
          * ---------------------------------------- */
         stage('Verify Deployment') {
             steps {
-                sshagent (credentials: ["${SSH_CRED}"]) {
+                sshagent(credentials: ["${SSH_CRED}"]) {
                     sh """
                     ssh -o StrictHostKeyChecking=no ${REMOTE_USER}@${REMOTE_HOST} '
                         echo "🔹 Checking running containers..."
