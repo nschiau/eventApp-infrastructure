@@ -9,7 +9,7 @@ pipeline {
         DOCKER_IMAGE = 'nschiau/eventapp:be-staging'  // backend image
         CONTAINER_NAME = 'eventapp-be'                // backend container
         DB_CONTAINER = 'eventapp-db'                  // postgres container
-        DB_VOLUME = 'eventapp-pgdata'                 // persistent DB volume
+        DB_VOLUME = 'eventapp_pgdata'                 // persistent DB volume
         NETWORK = 'eventapp-net'                     // shared Docker network
         PORT = '8080'                                 // exposed app port
     }
@@ -56,21 +56,22 @@ pipeline {
             steps {
                 sshagent(credentials: ["${SSH_CRED}"]) {
                     sh """
-                        ssh -o StrictHostKeyChecking=no ${REMOTE_USER}@${REMOTE_HOST}'
-                        echo "Checking PostgreSQL container..."
-                        if [ -z "\$(docker ps -aq -f name=${DB_CONTAINER})" ]; then
-                            echo "Creating PostgreSQL container..."
-                            docker run -d \
-                                --name ${DB_CONTAINER} \
-                                --network ${NETWORK} \
-                                -v ${DB_VOLUME}:/var/lib/postgresql/data \
-                                -e POSTGRES_USER=postgres \
-                                -e POSTGRES_PASSWORD=postgres \
-                                -e POSTGRES_DB=eventhorizon \
-                                postgres:16
-                        else
-                            echo "PostgreSQL container already exists — starting if stopped."
-                            docker start ${DB_CONTAINER} || true
+                        ssh -o StrictHostKeyChecking=no ${REMOTE_USER}@${REMOTE_HOST} '
+                            echo "Checking PostgreSQL container..."
+                            if [ -z "\$(docker ps -aq -f name=${DB_CONTAINER})" ]; then
+                                echo "Creating PostgreSQL container..."
+                                docker run -d \\
+                                    --name ${DB_CONTAINER} \\
+                                    --network ${NETWORK} \\
+                                    -v ${DB_VOLUME}:/var/lib/postgresql/data \\
+                                    -e POSTGRES_USER=postgres \\
+                                    -e POSTGRES_PASSWORD=postgres \\
+                                    -e POSTGRES_DB=eventhorizon \\
+                                    postgres:16
+                            else
+                                echo "PostgreSQL container already exists — starting if stopped."
+                                docker start ${DB_CONTAINER} || true
+                            fi
                         '
                         """
                 }
