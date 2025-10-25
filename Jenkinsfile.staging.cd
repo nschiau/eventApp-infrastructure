@@ -56,7 +56,7 @@ pipeline {
             steps {
                 sshagent(credentials: ["${SSH_CRED}"]) {
                     sh """
-                        ssh -o StrictHostKeyChecking=no ${REMOTE_USER}@${REMOTE_HOST} << 'EOF'
+                        ssh -o StrictHostKeyChecking=no ${REMOTE_USER}@${REMOTE_HOST}'
                         echo "🔹 Checking PostgreSQL container..."
                         if [ -z "\$(docker ps -aq -f name=${DB_CONTAINER})" ]; then
                             echo "⚙️ Creating PostgreSQL container..."
