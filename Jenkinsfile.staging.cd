@@ -11,7 +11,7 @@ pipeline {
         DB_CONTAINER = 'eventapp-db'                  // postgres container
         DB_VOLUME = 'eventapp_pgdata'                 // persistent DB volume
         NETWORK = 'eventapp-net'                     // shared Docker network
-        PORT = '8080'                                 // exposed app port
+        PORT = '5500'                                 // exposed app port
     }
 
     stages {
@@ -68,27 +68,9 @@ pipeline {
                                     -e POSTGRES_PASSWORD=postgres \\
                                     -e POSTGRES_DB=eventhorizon \\
                                     postgres:16
-
-                                echo "Waiting for PostgreSQL to start..."
-                                sleep 10
-
-                                # Verify database exists
-                                echo "Verifying database creation..."
-                                for i in {1..5}; do
-                                    if docker exec ${DB_CONTAINER} psql -U postgres -lqt | cut -d \\| -f 1 | grep -qw eventhorizon; then
-                                        echo "Database eventhorizon exists!"
-                                        break
-                                    fi
-                                    echo "Waiting for database... (\$i/5)"
-                                    sleep 5
-                                done
                             else
-                                echo "PostgreSQL container exists — starting if stopped"
+                                echo "PostgreSQL container already exists — starting if stopped."
                                 docker start ${DB_CONTAINER} || true
-
-                                # Ensure database exists even for existing container
-                                echo "Ensuring database exists..."
-                                docker exec ${DB_CONTAINER} psql -U postgres -c "CREATE DATABASE eventhorizon;" || true
                             fi
                         '
                         """
