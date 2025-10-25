@@ -84,36 +84,40 @@ pipeline {
         stage('Initialize Database') {
             steps {
                 sshagent(credentials: ["${SSH_CRED}"]) {
-                    withCredentials([usernamePassword(credentialsId: "${DOCKER_CRED}", usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
-                        sh """
-                        ssh -o StrictHostKeyChecking=no ${REMOTE_USER}@${REMOTE_HOST} '
-                            set -e
+                    withCredentials([usernamePassword(credentialsId: "${DOCKER_CRED}",
+                        usernameVariable: 'DOCKER_USER',
+                        passwordVariable: 'DOCKER_PASS')]) {
+                        sh """#!/bin/bash
+                            ssh -o StrictHostKeyChecking=no ${REMOTE_USER}@${REMOTE_HOST} \"bash -s\" << 'EOL'
+                                set -e
+                                echo "Waiting for PostgreSQL to be ready..."
+                                for i in {1..15}; do
+                                    if docker exec ${DB_CONTAINER} pg_isready -U postgres -d eventhorizon >/dev/null 2>&1; then
+                                        echo "PostgreSQL is ready!"
+                                        break
+                                    fi
+                                    echo "Waiting for DB... (\$i/15)"
+                                    sleep 3
+                                done
 
-                            echo "Waiting for PostgreSQL to be ready..."
-                            for i in {1..15}; do
-                                if docker exec ${DB_CONTAINER} pg_isready -U postgres -d eventhorizon >/dev/null 2>&1; then
-                                    echo "PostgreSQL is ready!"
-                                    break
-                                fi
-                                echo "Waiting for DB... (\\$i/15)"
-                                sleep 3
-                            done
+                                # Re-login to Docker Hub with provided credentials
+                                echo "${DOCKER_PASS}" | docker login -u "${DOCKER_USER}" --password-stdin
 
-                            echo "Pulling latest backend image..."
-                            echo "$DOCKER_PASS" | docker login -u "$DOCKER_USER" --password-stdin
-                            docker pull ${DOCKER_IMAGE}
+                                echo "Pulling latest backend image..."
+                                docker pull ${DOCKER_IMAGE}
 
-                            echo "Extracting init-db.sql from backend image..."
-                            docker create --name temp ${DOCKER_IMAGE} >/dev/null
-                            docker cp temp:/app/init-db.sql /home/${REMOTE_USER}/init-db.sql
-                            docker rm temp >/dev/null
+                                echo "Extracting init-db.sql from backend image..."
+                                docker create --name temp ${DOCKER_IMAGE} >/dev/null
+                                docker cp temp:/app/init-db.sql ./init-db.sql
+                                docker rm temp >/dev/null
 
-                            echo "Applying database initialization script..."
-                            docker exec -i ${DB_CONTAINER} psql -U postgres -d eventhorizon < /home/${REMOTE_USER}/init-db.sql || true
-                            echo "Database initialized (if not already)."
-                        '
+                                echo "Applying database initialization script..."
+                                docker exec -i ${DB_CONTAINER} psql -U postgres -d eventhorizon < ./init-db.sql || true
+                                rm -f ./init-db.sql
+                                echo "Database initialization completed."
+EOL
                         """
-                    }
+                        }
                 }
             }
         }
