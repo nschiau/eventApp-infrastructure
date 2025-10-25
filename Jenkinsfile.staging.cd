@@ -16,7 +16,7 @@ pipeline {
 
     stages {
         /* ---------------------------------------- *
-         * 1️⃣ LOGIN TO DOCKER HUB
+         * LOGIN TO DOCKER HUB
          * ---------------------------------------- */
         stage('Login to Docker Hub') {
             steps {
@@ -34,7 +34,7 @@ pipeline {
         }
 
        /* ---------------------------------------- *
-        * 2️⃣ SETUP NETWORK
+        * SETUP NETWORK
         * ---------------------------------------- */
         stage('Setup Network') {
             steps {
@@ -50,7 +50,7 @@ pipeline {
         }
 
         /* ---------------------------------------- *
-        * 3️⃣ SETUP DATABASE
+        * SETUP DATABASE
         * ---------------------------------------- */
         stage('Setup Database') {
             steps {
@@ -59,7 +59,7 @@ pipeline {
                         ssh -o StrictHostKeyChecking=no ${REMOTE_USER}@${REMOTE_HOST}'
                         echo "Checking PostgreSQL container..."
                         if [ -z "\$(docker ps -aq -f name=${DB_CONTAINER})" ]; then
-                            echo "⚙️ Creating PostgreSQL container..."
+                            echo "Creating PostgreSQL container..."
                             docker run -d \
                                 --name ${DB_CONTAINER} \
                                 --network ${NETWORK} \
@@ -78,7 +78,7 @@ pipeline {
         }
 
         /* ---------------------------------------- *
-         * 3️⃣ INITIALIZE DATABASE
+         * INITIALIZE DATABASE
          * ---------------------------------------- */
         stage('Initialize Database') {
             steps {
@@ -88,28 +88,28 @@ pipeline {
                         ssh -o StrictHostKeyChecking=no ${REMOTE_USER}@${REMOTE_HOST} '
                             set -e
 
-                            echo "🔹 Waiting for PostgreSQL to be ready..."
+                            echo "Waiting for PostgreSQL to be ready..."
                             for i in {1..15}; do
                                 if docker exec ${DB_CONTAINER} pg_isready -U postgres -d eventhorizon >/dev/null 2>&1; then
-                                    echo "✅ PostgreSQL is ready!"
+                                    echo "PostgreSQL is ready!"
                                     break
                                 fi
                                 echo "⏳ Waiting for DB... (\\$i/15)"
                                 sleep 3
                             done
 
-                            echo "🔹 Pulling latest backend image..."
+                            echo "Pulling latest backend image..."
                             echo "$DOCKER_PASS" | docker login -u "$DOCKER_USER" --password-stdin
                             docker pull ${DOCKER_IMAGE}
 
-                            echo "🔹 Extracting init-db.sql from backend image..."
+                            echo "Extracting init-db.sql from backend image..."
                             docker create --name temp ${DOCKER_IMAGE} >/dev/null
                             docker cp temp:/app/init-db.sql /home/${REMOTE_USER}/init-db.sql
                             docker rm temp >/dev/null
 
-                            echo "🔹 Applying database initialization script..."
+                            echo "Applying database initialization script..."
                             docker exec -i ${DB_CONTAINER} psql -U postgres -d eventhorizon < /home/${REMOTE_USER}/init-db.sql || true
-                            echo "✅ Database initialized (if not already)."
+                            echo "Database initialized (if not already)."
                         '
                         """
                     }
@@ -118,18 +118,18 @@ pipeline {
         }
 
         /* ---------------------------------------- *
-         * 4️⃣ DEPLOY BACKEND CONTAINER
+         * DEPLOY BACKEND CONTAINER
          * ---------------------------------------- */
         stage('Deploy Backend App') {
             steps {
                 sshagent(credentials: ["${SSH_CRED}"]) {
                     sh """
                     ssh -o StrictHostKeyChecking=no ${REMOTE_USER}@${REMOTE_HOST} '
-                        echo "🔹 Stopping old backend container (if exists)..."
+                        echo "Stopping old backend container (if exists)..."
                         docker stop ${CONTAINER_NAME} || true
                         docker rm ${CONTAINER_NAME} || true
 
-                        echo "🔹 Running new backend container..."
+                        echo "Running new backend container..."
                         docker run -d \\
                             --name ${CONTAINER_NAME} \\
                             --network ${NETWORK} \\
@@ -137,7 +137,7 @@ pipeline {
                             -e ConnectionStrings__DefaultConnection="Host=${DB_CONTAINER};Database=eventhorizon;Username=postgres;Password=postgres" \\
                             ${DOCKER_IMAGE}
 
-                        echo "✅ Backend container deployed on port ${PORT}"
+                        echo "Backend container deployed on port ${PORT}"
                     '
                     """
                 }
@@ -145,22 +145,22 @@ pipeline {
         }
 
         /* ---------------------------------------- *
-         * 5️⃣ VERIFY CONTAINER STATUS
+         * VERIFY CONTAINER STATUS
          * ---------------------------------------- */
         stage('Verify Deployment') {
             steps {
                 sshagent(credentials: ["${SSH_CRED}"]) {
                     sh """
                     ssh -o StrictHostKeyChecking=no ${REMOTE_USER}@${REMOTE_HOST} '
-                        echo "🔹 Checking running containers..."
+                        echo "Checking running containers..."
                         docker ps
 
-                        echo "🔹 Checking backend container logs..."
+                        echo "Checking backend container logs..."
                         if docker ps -q -f name=${CONTAINER_NAME} >/dev/null; then
-                            echo "✅ Backend container is running."
+                            echo "Backend container is running."
                             docker logs --tail 20 ${CONTAINER_NAME} || true
                         else
-                            echo "❌ Backend container not running!"
+                            echo "Backend container not running!"
                             docker logs ${CONTAINER_NAME} || true
                             exit 1
                         fi
@@ -173,10 +173,10 @@ pipeline {
 
     post {
         success {
-            echo '✅ Deployment to staging successful.'
+            echo 'Deployment to staging successful.'
         }
         failure {
-            echo '❌ Deployment failed.'
+            echo 'Deployment failed.'
         }
     }
 }
