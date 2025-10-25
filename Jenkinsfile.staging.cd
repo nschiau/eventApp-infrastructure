@@ -57,23 +57,23 @@ pipeline {
                 sshagent(credentials: ["${SSH_CRED}"]) {
                     sh """
                         ssh -o StrictHostKeyChecking=no ${REMOTE_USER}@${REMOTE_HOST} << 'EOF'
-                            echo "🔹 Checking PostgreSQL container..."
-                            if [ -z "\$(docker ps -aq -f name=${DB_CONTAINER})" ]; then
-                                echo "⚙️ Creating PostgreSQL container..."
-                                docker run -d \\
-                                    --name ${DB_CONTAINER} \\
-                                    --network ${NETWORK} \\
-                                    -v ${DB_VOLUME}:/var/lib/postgresql/data \\
-                                    -e POSTGRES_USER=postgres \\
-                                    -e POSTGRES_PASSWORD=postgres \\
-                                    -e POSTGRES_DB=eventhorizon \\
-                                    postgres:16
-                            else
-                                echo "ℹ️ PostgreSQL container already exists — starting if stopped."
-                                docker start ${DB_CONTAINER} || true
-                            fi
+                        echo "🔹 Checking PostgreSQL container..."
+                        if [ -z "\$(docker ps -aq -f name=${DB_CONTAINER})" ]; then
+                            echo "⚙️ Creating PostgreSQL container..."
+                            docker run -d \
+                                --name ${DB_CONTAINER} \
+                                --network ${NETWORK} \
+                                -v ${DB_VOLUME}:/var/lib/postgresql/data \
+                                -e POSTGRES_USER=postgres \
+                                -e POSTGRES_PASSWORD=postgres \
+                                -e POSTGRES_DB=eventhorizon \
+                                postgres:16
+                        else
+                            echo "ℹ️ PostgreSQL container already exists — starting if stopped."
+                            docker start ${DB_CONTAINER} || true
+                        fi
                         EOF
-                    """
+                        """
                 }
             }
         }
