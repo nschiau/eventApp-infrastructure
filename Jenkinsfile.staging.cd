@@ -9,8 +9,8 @@ pipeline {
         DOCKER_IMAGE = 'nschiau/eventapp:be-staging'  // backend image
         CONTAINER_NAME = 'eventapp-be'                // backend container
         DB_CONTAINER = 'eventapp-db'                  // postgres container
-        DB_VOLUME = 'eventapp_pgdata'                 // persistent DB volume
-        NETWORK = 'eventapp-net'                      // shared Docker network
+        DB_VOLUME = 'eventapp-pgdata'                 // persistent DB volume
+        NETWORK = 'eventapp-net'                     // shared Docker network
         PORT = '8080'                                 // exposed app port
     }
 
@@ -25,7 +25,7 @@ pipeline {
                         sh """
                         ssh -o StrictHostKeyChecking=no ${REMOTE_USER}@${REMOTE_HOST} '
                             echo "$DOCKER_PASS" | docker login -u "$DOCKER_USER" --password-stdin
-                            echo "✅ Logged into Docker Hub"
+                            echo "Logged into Docker Hub"
                         '
                         """
                     }
@@ -41,7 +41,7 @@ pipeline {
                 sshagent(credentials: ["${SSH_CRED}"]) {
                     sh """
                     ssh -o StrictHostKeyChecking=no ${REMOTE_USER}@${REMOTE_HOST} '
-                        echo "🔹 Creating Docker network if not exists..."
+                        echo "Creating Docker network if not exists..."
                         docker network inspect ${NETWORK} >/dev/null 2>&1 || docker network create ${NETWORK}
                     '
                     """
@@ -57,7 +57,7 @@ pipeline {
                 sshagent(credentials: ["${SSH_CRED}"]) {
                     sh """
                         ssh -o StrictHostKeyChecking=no ${REMOTE_USER}@${REMOTE_HOST}'
-                        echo "🔹 Checking PostgreSQL container..."
+                        echo "Checking PostgreSQL container..."
                         if [ -z "\$(docker ps -aq -f name=${DB_CONTAINER})" ]; then
                             echo "⚙️ Creating PostgreSQL container..."
                             docker run -d \
@@ -69,7 +69,7 @@ pipeline {
                                 -e POSTGRES_DB=eventhorizon \
                                 postgres:16
                         else
-                            echo "ℹ️ PostgreSQL container already exists — starting if stopped."
+                            echo "PostgreSQL container already exists — starting if stopped."
                             docker start ${DB_CONTAINER} || true
                         '
                         """
