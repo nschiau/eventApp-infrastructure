@@ -94,7 +94,7 @@ pipeline {
                                     echo "PostgreSQL is ready!"
                                     break
                                 fi
-                                echo "⏳ Waiting for DB... (\\$i/15)"
+                                echo "Waiting for DB... (\\$i/15)"
                                 sleep 3
                             done
 
