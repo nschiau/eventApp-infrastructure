@@ -71,8 +71,7 @@ pipeline {
                         else
                             echo "ℹ️ PostgreSQL container already exists — starting if stopped."
                             docker start ${DB_CONTAINER} || true
-                        fi
-                        EOF
+                        '
                         """
                 }
             }
