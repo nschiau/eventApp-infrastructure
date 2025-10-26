@@ -1,0 +1,120 @@
+pipeline {
+    agent any
+
+    environment {
+        SSH_CRED       = 'staging-ssh'                   // SSH key credential ID
+        DOCKER_CRED    = 'dockerhub-token'               // Docker Hub credential ID
+        REMOTE_USER    = 'vagrant'                       // staging box user
+        REMOTE_HOST    = '192.168.10.16'                 // staging VM IP
+        DOCKER_IMAGE   = 'nschiau/eventapp-fe:fe-staging' // frontend image from Docker Hub
+        CONTAINER_NAME = 'eventapp-fe'                   // frontend container name
+        NETWORK        = 'eventapp-net'                  // shared network (same as backend)
+        PORT           = '3000'                          // exposed React app port on host
+        BACKEND_URL    = 'http://eventapp-be:8080'       // internal backend service URL (Docker network name)
+    }
+
+    stages {
+        /* ---------------------------------------- *
+         * LOGIN TO DOCKER HUB
+         * ---------------------------------------- */
+        stage('Login to Docker Hub') {
+            steps {
+                sshagent(credentials: ["${SSH_CRED}"]) {
+                    withCredentials([usernamePassword(credentialsId: "${DOCKER_CRED}",
+                        usernameVariable: 'DOCKER_USER',
+                        passwordVariable: 'DOCKER_PASS')]) {
+                        sh """
+                        ssh -o StrictHostKeyChecking=no ${REMOTE_USER}@${REMOTE_HOST} '
+                            echo "Logging into Docker Hub..."
+                            echo "$DOCKER_PASS" | docker login -u "$DOCKER_USER" --password-stdin
+                        '
+                        """
+                        }
+                }
+            }
+        }
+
+        /* ---------------------------------------- *
+         * SETUP NETWORK
+         * ---------------------------------------- */
+        stage('Setup Network') {
+            steps {
+                sshagent(credentials: ["${SSH_CRED}"]) {
+                    sh """
+                    ssh -o StrictHostKeyChecking=no ${REMOTE_USER}@${REMOTE_HOST} '
+                        echo "Creating Docker network if not exists..."
+                        docker network inspect ${NETWORK} >/dev/null 2>&1 || docker network create ${NETWORK}
+                    '
+                    """
+                }
+            }
+        }
+
+        /* ---------------------------------------- *
+         * DEPLOY FRONTEND CONTAINER
+         * ---------------------------------------- */
+        stage('Deploy Frontend App') {
+            steps {
+                sshagent(credentials: ["${SSH_CRED}"]) {
+                    sh """
+                    ssh -o StrictHostKeyChecking=no ${REMOTE_USER}@${REMOTE_HOST} '
+                        echo "Stopping old frontend container (if exists)..."
+                        docker stop ${CONTAINER_NAME} || true
+                        docker rm ${CONTAINER_NAME} || true
+
+                        echo "Pulling latest frontend image..."
+                        docker pull ${DOCKER_IMAGE}
+
+                        echo "Running new frontend container..."
+                        docker run -d \\
+                            --name ${CONTAINER_NAME} \\
+                            --network ${NETWORK} \\
+                            -p ${PORT}:80 \\
+                            -e REACT_APP_API_BASE_URL=${BACKEND_URL} \\
+                            ${DOCKER_IMAGE}
+
+                        echo "Frontend container deployed on port ${PORT}"
+                    '
+                    """
+                }
+            }
+        }
+
+        /* ---------------------------------------- *
+         * VERIFY DEPLOYMENT
+         * ---------------------------------------- */
+        stage('Verify Deployment') {
+            steps {
+                sshagent(credentials: ["${SSH_CRED}"]) {
+                    sh """
+                    ssh -o StrictHostKeyChecking=no ${REMOTE_USER}@${REMOTE_HOST} '
+                        echo "Checking running containers..."
+                        docker ps
+
+                        echo "Checking frontend container logs..."
+                        if docker ps -q -f name=${CONTAINER_NAME} >/dev/null; then
+                            echo "Frontend container is running."
+                            docker logs --tail 20 ${CONTAINER_NAME} || true
+                            echo "Testing HTTP response..."
+                            curl -I http://localhost:${PORT} || true
+                        else
+                            echo "Frontend container not running!"
+                            docker logs ${CONTAINER_NAME} || true
+                            exit 1
+                        fi
+                    '
+                    """
+                }
+            }
+        }
+    }
+
+    post {
+        success {
+            echo 'Frontend deployment to staging successful.'
+        }
+        failure {
+            echo 'Frontend deployment failed.'
+        }
+    }
+}

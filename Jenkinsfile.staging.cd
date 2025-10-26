@@ -21,14 +21,16 @@ pipeline {
         stage('Login to Docker Hub') {
             steps {
                 sshagent(credentials: ["${SSH_CRED}"]) {
-                    withCredentials([usernamePassword(credentialsId: "${DOCKER_CRED}", usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
+                    withCredentials([usernamePassword(credentialsId: "${DOCKER_CRED}",
+                        usernameVariable: 'DOCKER_USER',
+                        passwordVariable: 'DOCKER_PASS')]) {
                         sh """
                         ssh -o StrictHostKeyChecking=no ${REMOTE_USER}@${REMOTE_HOST} '
                             echo "$DOCKER_PASS" | docker login -u "$DOCKER_USER" --password-stdin
                             echo "Logged into Docker Hub"
                         '
                         """
-                    }
+                        }
                 }
             }
         }
