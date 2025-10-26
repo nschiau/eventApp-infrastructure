@@ -6,7 +6,7 @@ pipeline {
         DOCKER_CRED    = 'dockerhub-token'               // Docker Hub credential ID
         REMOTE_USER    = 'vagrant'                       // staging box user
         REMOTE_HOST    = '192.168.10.16'                 // staging VM IP
-        DOCKER_IMAGE   = 'nschiau/eventapp-fe:fe-staging' // frontend image from Docker Hub
+        DOCKER_IMAGE   = 'nschiau/eventapp:fe-staging' // frontend image from Docker Hub
         CONTAINER_NAME = 'eventapp-fe'                   // frontend container name
         NETWORK        = 'eventapp-net'                  // shared network (same as backend)
         PORT           = '3000'                          // exposed React app port on host
