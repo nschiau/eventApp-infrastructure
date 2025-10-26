@@ -60,8 +60,7 @@ pipeline {
             post {
                 success {
                     echo 'Frontend image pushed to Docker Hub successfully.'
-                    // Optionally trigger the deployment pipeline
-                    // build job: 'eventApp-cd-staging'
+                    build job: 'eventApp-fe-cd-staging'
                 }
             }
         }
