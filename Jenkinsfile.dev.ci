@@ -87,7 +87,7 @@ pipeline {
                     fi
 
                     echo "Merging PR #$PR_NUM for $repo ..."
-                    gh pr merge "$PR_NUM" --merge --admin --delete-branch=false || true
+                    gh pr merge "$PR_NUM" --squash --admin --delete-branch=false || true
                     cd ..
                     done
                     '''
