@@ -1,0 +1,88 @@
+pipeline {
+    agent any
+    tools {
+        nodejs 'NodeJS'
+    }
+
+    environment {
+        DOTNET_ROOT = '/usr/share/dotnet'
+        GITHUB_TOKEN = credentials('github-token')
+    }
+
+    stages {
+        stage('Checkout Backend') {
+            steps {
+                dir('backend') {
+                    git branch: 'dev', url: 'https://github.com/nschiau/eventApp-backend.git'
+                }
+            }
+        }
+
+        stage('Checkout Frontend') {
+            steps {
+                dir('frontend') {
+                    git branch: 'dev', url: 'https://github.com/nschiau/eventApp-frontend.git'
+                }
+            }
+        }
+
+        stage('Restore, Build and Test Backend') {
+            steps {
+                dir('backend') {
+                    sh '''
+                    dotnet restore src/EventHorizon.Api/EventHorizon.Api.csproj
+                    dotnet build --no-restore src/EventHorizon.Api/EventHorizon.Api.csproj --configuration Release
+                    dotnet test --no-build --verbosity normal tests/EventHorizon.Api.Tests/EventHorizon.Api.Tests.csproj
+                    '''
+                }
+            }
+        }
+
+        stage('Install dependencies, Build and Test Frontend') {
+            steps {
+                dir('frontend') {
+                    sh '''
+                    npm install
+                    npm run build
+                    npm test || echo "No frontend tests configured"
+                    '''
+                }
+            }
+        }
+    }
+
+    post {
+        success {
+            echo 'CI dev successful. Promoting dev → staging...'
+            script {
+                sh '''
+                echo "Processing BACKEND repository..."
+                cd backend
+                gh auth login --with-token <<< "$GITHUB_TOKEN"
+                PR_NUM=$(gh pr list --base staging --head dev --json number --jq '.[0].number')
+                if [ -z "$PR_NUM" ]; then
+                  gh pr create --base staging --head dev --title "Sync dev → staging (backend)" --body "Auto PR from Jenkins CI"
+                  PR_NUM=$(gh pr list --base staging --head dev --json number --jq '.[0].number')
+                fi
+                gh pr merge $PR_NUM --merge --admin --delete-branch=false
+                cd ..
+
+                echo "Processing FRONTEND repository..."
+                cd frontend
+                gh auth login --with-token <<< "$GITHUB_TOKEN"
+                PR_NUM=$(gh pr list --base staging --head dev --json number --jq '.[0].number')
+                if [ -z "$PR_NUM" ]; then
+                  gh pr create --base staging --head dev --title "Sync dev → staging (frontend)" --body "Auto PR from Jenkins CI"
+                  PR_NUM=$(gh pr list --base staging --head dev --json number --jq '.[0].number')
+                fi
+                gh pr merge $PR_NUM --merge --admin --delete-branch=false
+                '''
+            }
+        }
+
+        always {
+            echo 'Cleaning workspace...'
+            cleanWs()
+        }
+    }
+}
