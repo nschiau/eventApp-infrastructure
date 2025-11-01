@@ -1,0 +1,189 @@
+pipeline {
+    agent any
+
+    environment {
+        SSH_CRED = 'staging-ssh'                      // SSH key credential ID
+        DOCKER_CRED = 'dockerhub-token'               // Docker Hub credential ID
+        REMOTE_USER = 'vagrant'                       // user on staging box
+        REMOTE_HOST = '192.168.10.16'                 // staging box IP
+        DOCKER_IMAGE = 'nschiau/eventapp:be-staging'  // backend image
+        CONTAINER_NAME = 'eventapp-be'                // backend container
+        DB_CONTAINER = 'eventapp-db'                  // postgres container
+        DB_VOLUME = 'eventapp_pgdata'                 // persistent DB volume
+        NETWORK = 'eventapp-net'                     // shared Docker network
+        PORT = '5500'                                 // exposed app port
+    }
+
+    stages {
+        /* ---------------------------------------- *
+         * LOGIN TO DOCKER HUB
+         * ---------------------------------------- */
+        stage('Login to Docker Hub') {
+            steps {
+                sshagent(credentials: ["${SSH_CRED}"]) {
+                    withCredentials([usernamePassword(credentialsId: "${DOCKER_CRED}",
+                        usernameVariable: 'DOCKER_USER',
+                        passwordVariable: 'DOCKER_PASS')]) {
+                        sh """
+                        ssh -o StrictHostKeyChecking=no ${REMOTE_USER}@${REMOTE_HOST} '
+                            echo "$DOCKER_PASS" | docker login -u "$DOCKER_USER" --password-stdin
+                            echo "Logged into Docker Hub"
+                        '
+                        """
+                        }
+                }
+            }
+        }
+
+       /* ---------------------------------------- *
+        * SETUP NETWORK
+        * ---------------------------------------- */
+        stage('Setup Network') {
+            steps {
+                sshagent(credentials: ["${SSH_CRED}"]) {
+                    sh """
+                    ssh -o StrictHostKeyChecking=no ${REMOTE_USER}@${REMOTE_HOST} '
+                        echo "Creating Docker network if not exists..."
+                        docker network inspect ${NETWORK} >/dev/null 2>&1 || docker network create ${NETWORK}
+                    '
+                    """
+                }
+            }
+        }
+
+        /* ---------------------------------------- *
+        * SETUP DATABASE
+        * ---------------------------------------- */
+        stage('Setup Database') {
+            steps {
+                sshagent(credentials: ["${SSH_CRED}"]) {
+                    sh """
+                        ssh -o StrictHostKeyChecking=no ${REMOTE_USER}@${REMOTE_HOST} '
+                            echo "Checking PostgreSQL container..."
+                            if [ -z "\$(docker ps -aq -f name=${DB_CONTAINER})" ]; then
+                                echo "Creating PostgreSQL container..."
+                                docker run -d \\
+                                    --name ${DB_CONTAINER} \\
+                                    --network ${NETWORK} \\
+                                    -v ${DB_VOLUME}:/var/lib/postgresql/data \\
+                                    -e POSTGRES_USER=postgres \\
+                                    -e POSTGRES_PASSWORD=postgres \\
+                                    -e POSTGRES_DB=eventhorizon \\
+                                    postgres:16
+                            else
+                                echo "PostgreSQL container already exists — starting if stopped."
+                                docker start ${DB_CONTAINER} || true
+                            fi
+                        '
+                        """
+                }
+            }
+        }
+
+        /* ---------------------------------------- *
+         * INITIALIZE DATABASE
+         * ---------------------------------------- */
+        stage('Initialize Database') {
+            steps {
+                sshagent(credentials: ["${SSH_CRED}"]) {
+                    withCredentials([usernamePassword(credentialsId: "${DOCKER_CRED}",
+                        usernameVariable: 'DOCKER_USER',
+                        passwordVariable: 'DOCKER_PASS')]) {
+                        sh """#!/bin/bash
+                            ssh -o StrictHostKeyChecking=no ${REMOTE_USER}@${REMOTE_HOST} \"bash -s\" << 'EOL'
+                                set -e
+                                echo "Waiting for PostgreSQL to be ready..."
+                                for i in {1..15}; do
+                                    if docker exec ${DB_CONTAINER} pg_isready -U postgres -d eventhorizon >/dev/null 2>&1; then
+                                        echo "PostgreSQL is ready!"
+                                        break
+                                    fi
+                                    echo "Waiting for DB... (\$i/15)"
+                                    sleep 3
+                                done
+
+                                # Re-login to Docker Hub with provided credentials
+                                echo "${DOCKER_PASS}" | docker login -u "${DOCKER_USER}" --password-stdin
+
+                                echo "Pulling latest backend image..."
+                                docker pull ${DOCKER_IMAGE}
+
+                                echo "Extracting init-db.sql from backend image..."
+                                docker create --name temp ${DOCKER_IMAGE} >/dev/null
+                                docker cp temp:/app/init-db.sql ./init-db.sql
+                                docker rm temp >/dev/null
+
+                                echo "Applying database initialization script..."
+                                docker exec -i ${DB_CONTAINER} psql -U postgres -d eventhorizon < ./init-db.sql || true
+                                rm -f ./init-db.sql
+                                echo "Database initialization completed."
+EOL
+                        """
+                        }
+                }
+            }
+        }
+
+        /* ---------------------------------------- *
+         * DEPLOY BACKEND CONTAINER
+         * ---------------------------------------- */
+        stage('Deploy Backend App') {
+            steps {
+                sshagent(credentials: ["${SSH_CRED}"]) {
+                    sh """
+                    ssh -o StrictHostKeyChecking=no ${REMOTE_USER}@${REMOTE_HOST} '
+                        echo "Stopping old backend container (if exists)..."
+                        docker stop ${CONTAINER_NAME} || true
+                        docker rm ${CONTAINER_NAME} || true
+
+                        echo "Running new backend container..."
+                        docker run -d \\
+                            --name ${CONTAINER_NAME} \\
+                            --network ${NETWORK} \\
+                            -p ${PORT}:8080 \\
+                            -e ConnectionStrings__DefaultConnection="Host=${DB_CONTAINER};Database=eventhorizon;Username=postgres;Password=postgres" \\
+                            ${DOCKER_IMAGE}
+
+                        echo "Backend container deployed on port ${PORT}"
+                    '
+                    """
+                }
+            }
+        }
+
+        /* ---------------------------------------- *
+         * VERIFY CONTAINER STATUS
+         * ---------------------------------------- */
+        stage('Verify Deployment') {
+            steps {
+                sshagent(credentials: ["${SSH_CRED}"]) {
+                    sh """
+                    ssh -o StrictHostKeyChecking=no ${REMOTE_USER}@${REMOTE_HOST} '
+                        echo "Checking running containers..."
+                        docker ps
+
+                        echo "Checking backend container logs..."
+                        if docker ps -q -f name=${CONTAINER_NAME} >/dev/null; then
+                            echo "Backend container is running."
+                            docker logs --tail 20 ${CONTAINER_NAME} || true
+                        else
+                            echo "Backend container not running!"
+                            docker logs ${CONTAINER_NAME} || true
+                            exit 1
+                        fi
+                    '
+                    """
+                }
+            }
+        }
+    }
+
+    post {
+        success {
+            echo 'Deployment to staging successful.'
+        }
+        failure {
+            echo 'Deployment failed.'
+        }
+    }
+}

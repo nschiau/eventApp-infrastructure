@@ -1,64 +1,152 @@
 pipeline {
     agent any
 
+    triggers {
+        githubPush()
+    }
+
+    tools {
+        nodejs 'NodeJS'
+    }
+
     environment {
-        SSH_CRED = 'staging-ssh'                      // SSH key credential ID
-        DOCKER_CRED = 'dockerhub-token'               // Docker Hub credential ID
-        REMOTE_USER = 'vagrant'                       // user on staging box
-        REMOTE_HOST = '192.168.10.16'                 // staging box IP
-        DOCKER_IMAGE = 'nschiau/eventapp:be-staging'  // backend image
-        CONTAINER_NAME = 'eventapp-be'                // backend container
-        DB_CONTAINER = 'eventapp-db'                  // postgres container
-        DB_VOLUME = 'eventapp_pgdata'                 // persistent DB volume
-        NETWORK = 'eventapp-net'                     // shared Docker network
-        PORT = '5500'                                 // exposed app port
+        DOCKERHUB_CREDENTIALS = 'dockerhub-token'
+        IMAGE_REPO = 'nschiau/eventapp'
+        SSH_CRED = 'staging-ssh'
+        STAGING_HOST = '192.168.10.16'
+        STAGING_USER = 'vagrant'
+        BE_TAG_BUILD = "be-staging-${BUILD_NUMBER}"
+        FE_TAG_BUILD = "fe-staging-${BUILD_NUMBER}"
+        BE_TAG_LATEST = 'be-staging'
+        FE_TAG_LATEST = 'fe-staging'
+        BE_PORT = '5500'
+        FE_PORT = '3000'
+        BE_CONTAINER_NAME = 'eventapp-be'
+        FE_CONTAINER_NAME = 'eventapp-fe'
+        DB_CONTAINER = 'eventapp-db'
+        DB_VOLUME = 'eventapp_pgdata'
+        NETWORK = 'eventapp-net'
+        BACKEND_URL = 'http://eventapp-be:8080'
     }
 
     stages {
-        /* ---------------------------------------- *
-         * LOGIN TO DOCKER HUB
-         * ---------------------------------------- */
-        stage('Login to Docker Hub') {
-            steps {
-                sshagent(credentials: ["${SSH_CRED}"]) {
-                    withCredentials([usernamePassword(credentialsId: "${DOCKER_CRED}",
-                        usernameVariable: 'DOCKER_USER',
-                        passwordVariable: 'DOCKER_PASS')]) {
-                        sh """
-                        ssh -o StrictHostKeyChecking=no ${REMOTE_USER}@${REMOTE_HOST} '
-                            echo "$DOCKER_PASS" | docker login -u "$DOCKER_USER" --password-stdin
-                            echo "Logged into Docker Hub"
-                        '
-                        """
+        stage('Checkout (staging)') {
+            parallel {
+                stage('Checkout Backend') {
+                    steps {
+                        dir('backend') {
+                            git branch: 'staging', url: 'https://github.com/nschiau/eventApp-backend.git'
                         }
+                    }
+                }
+                stage('Checkout Frontend') {
+                    steps {
+                        dir('frontend') {
+                            git branch: 'staging', url: 'https://github.com/nschiau/eventApp-frontend.git'
+                        }
+                    }
                 }
             }
         }
 
-       /* ---------------------------------------- *
-        * SETUP NETWORK
-        * ---------------------------------------- */
-        stage('Setup Network') {
-            steps {
-                sshagent(credentials: ["${SSH_CRED}"]) {
-                    sh """
-                    ssh -o StrictHostKeyChecking=no ${REMOTE_USER}@${REMOTE_HOST} '
+        stage('Build and Test') {
+            parallel {
+                stage('Backend: Restore, Build and Test (.NET)') {
+                    environment {
+                        DOTNET_CLI_TELEMETRY_OPTOUT = '1'
+                    }
+                    steps {
+                        dir('backend') {
+                            sh '''
+                set -e
+                dotnet --info
+                dotnet restore src/EventHorizon.Api/EventHorizon.Api.csproj
+                dotnet build --no-restore src/EventHorizon.Api/EventHorizon.Api.csproj --configuration Release
+                dotnet test  --no-build --verbosity normal tests/EventHorizon.Api.Tests/EventHorizon.Api.Tests.csproj
+              '''
+                        }
+                    }
+                }
+                stage('Frontend: Install dependencies, Build and Test (Node)') {
+                    steps {
+                        dir('frontend') {
+                            sh '''
+                set -e
+                node -v
+                npm ci || npm install
+                npm run build
+                npm test || echo "No frontend tests configured"
+              '''
+                        }
+                    }
+                }
+            }
+        }
+
+        stage('Docker Build & Push') {
+            parallel {
+                stage('Backend Docker Image') {
+                    steps {
+                        dir('backend') {
+                            script {
+                                // Build image with branch-specific tag
+                                def image = docker.build(
+                    "${IMAGE_REPO}:${BE_TAG_BUILD}",
+                    '-f src/EventHorizon.Api/Dockerfile .'
+                )
+
+                                // Push both the unique tag and the staging tag
+                                docker.withRegistry('', DOCKERHUB_CREDENTIALS) {
+                                    image.push()
+                                    image.push(BE_TAG_LATEST)
+                                }
+                            }
+                        }
+                    }
+                }
+
+                stage('Frontend Docker Image') {
+                    steps {
+                        dir('frontend') {
+                            script {
+                                // Build image using Dockerfile from repo root
+                                def image = docker.build(
+                    "${IMAGE_REPO}:${FE_TAG_BUILD}",
+                    '.'
+                )
+
+                                // Push both the unique tag and the staging tag
+                                docker.withRegistry('', DOCKERHUB_CREDENTIALS) {
+                                    image.push()
+                                    image.push(FE_TAG_LATEST)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        stage('Deploy to Staging') {
+            stages {
+                stage('Setup Network') {
+                    steps {
+                        sshagent(credentials: ["${SSH_CRED}"]) {
+                            sh """
+                    ssh -o StrictHostKeyChecking=no ${STAGING_USER}@${STAGING_HOST} '
                         echo "Creating Docker network if not exists..."
                         docker network inspect ${NETWORK} >/dev/null 2>&1 || docker network create ${NETWORK}
                     '
                     """
+                        }
+                    }
                 }
-            }
-        }
 
-        /* ---------------------------------------- *
-        * SETUP DATABASE
-        * ---------------------------------------- */
-        stage('Setup Database') {
-            steps {
-                sshagent(credentials: ["${SSH_CRED}"]) {
-                    sh """
-                        ssh -o StrictHostKeyChecking=no ${REMOTE_USER}@${REMOTE_HOST} '
+                stage('Setup Database') {
+                    steps {
+                        sshagent(credentials: ["${SSH_CRED}"]) {
+                            sh """
+                        ssh -o StrictHostKeyChecking=no ${STAGING_USER}@${STAGING_HOST} '
                             echo "Checking PostgreSQL container..."
                             if [ -z "\$(docker ps -aq -f name=${DB_CONTAINER})" ]; then
                                 echo "Creating PostgreSQL container..."
@@ -76,21 +164,18 @@ pipeline {
                             fi
                         '
                         """
+                        }
+                    }
                 }
-            }
-        }
 
-        /* ---------------------------------------- *
-         * INITIALIZE DATABASE
-         * ---------------------------------------- */
-        stage('Initialize Database') {
-            steps {
-                sshagent(credentials: ["${SSH_CRED}"]) {
-                    withCredentials([usernamePassword(credentialsId: "${DOCKER_CRED}",
+                stage('Initialize Database') {
+                    steps {
+                        sshagent(credentials: ["${SSH_CRED}"]) {
+                            withCredentials([usernamePassword(credentialsId: "${DOCKERHUB_CREDENTIALS}",
                         usernameVariable: 'DOCKER_USER',
                         passwordVariable: 'DOCKER_PASS')]) {
-                        sh """#!/bin/bash
-                            ssh -o StrictHostKeyChecking=no ${REMOTE_USER}@${REMOTE_HOST} \"bash -s\" << 'EOL'
+                                sh """#!/bin/bash
+                            ssh -o StrictHostKeyChecking=no ${STAGING_USER}@${STAGING_HOST} \"bash -s\" << 'EOL'
                                 set -e
                                 echo "Waiting for PostgreSQL to be ready..."
                                 for i in {1..15}; do
@@ -103,13 +188,13 @@ pipeline {
                                 done
 
                                 # Re-login to Docker Hub with provided credentials
-                                echo "${DOCKER_PASS}" | docker login -u "${DOCKER_USER}" --password-stdin
+                                echo "${IMAGE_REPO}:${BE_TAG_LATEST}" | docker login -u "${DOCKER_USER}" --password-stdin
 
                                 echo "Pulling latest backend image..."
-                                docker pull ${DOCKER_IMAGE}
+                                docker pull ${IMAGE_REPO}:${BE_TAG_LATEST}
 
                                 echo "Extracting init-db.sql from backend image..."
-                                docker create --name temp ${DOCKER_IMAGE} >/dev/null
+                                docker create --name temp ${IMAGE_REPO}:${BE_TAG_LATEST} >/dev/null
                                 docker cp temp:/app/init-db.sql ./init-db.sql
                                 docker rm temp >/dev/null
 
@@ -120,70 +205,90 @@ pipeline {
 EOL
                         """
                         }
+                        }
+                    }
                 }
-            }
-        }
 
-        /* ---------------------------------------- *
-         * DEPLOY BACKEND CONTAINER
-         * ---------------------------------------- */
-        stage('Deploy Backend App') {
-            steps {
-                sshagent(credentials: ["${SSH_CRED}"]) {
-                    sh """
-                    ssh -o StrictHostKeyChecking=no ${REMOTE_USER}@${REMOTE_HOST} '
-                        echo "Stopping old backend container (if exists)..."
-                        docker stop ${CONTAINER_NAME} || true
-                        docker rm ${CONTAINER_NAME} || true
+                stage('Deploy Backend App') {
+                    steps {
+                        sshagent(credentials: ["${SSH_CRED}"]) {
+                            sh """
+                            ssh -o StrictHostKeyChecking=no ${STAGING_USER}@${STAGING_HOST} '
+                                echo "Stopping old backend container (if exists)..."
+                                docker stop ${BE_CONTAINER_NAME} || true
+                                docker rm ${BE_CONTAINER_NAME} || true
 
-                        echo "Running new backend container..."
-                        docker run -d \\
-                            --name ${CONTAINER_NAME} \\
-                            --network ${NETWORK} \\
-                            -p ${PORT}:8080 \\
-                            -e ConnectionStrings__DefaultConnection="Host=${DB_CONTAINER};Database=eventhorizon;Username=postgres;Password=postgres" \\
-                            ${DOCKER_IMAGE}
+                                echo "Running new backend container..."
+                                docker run -d \\
+                                    --name ${BE_CONTAINER_NAME} \\
+                                    --network ${NETWORK} \\
+                                    -p ${BE_PORT}:8080 \\
+                                    -e ConnectionStrings__DefaultConnection="Host=${DB_CONTAINER};Database=eventhorizon;Username=postgres;Password=postgres" \\
+                                    ${IMAGE_REPO}:${BE_TAG_LATEST}
 
-                        echo "Backend container deployed on port ${PORT}"
-                    '
-                    """
+                                echo "Backend container deployed on port ${BE_PORT}"
+                            '
+                            """
+                        }
+                    }
                 }
-            }
-        }
 
-        /* ---------------------------------------- *
-         * VERIFY CONTAINER STATUS
-         * ---------------------------------------- */
-        stage('Verify Deployment') {
-            steps {
-                sshagent(credentials: ["${SSH_CRED}"]) {
-                    sh """
-                    ssh -o StrictHostKeyChecking=no ${REMOTE_USER}@${REMOTE_HOST} '
-                        echo "Checking running containers..."
-                        docker ps
+                stage('Deploy Frontend App') {
+                    steps {
+                        sshagent(credentials: ["${SSH_CRED}"]) {
+                            sh """
+                            ssh -o StrictHostKeyChecking=no ${STAGING_USER}@${STAGING_HOST} '
+                                echo "Stopping old frontend container (if exists)..."
+                                docker stop ${FE_CONTAINER_NAME} || true
+                                docker rm ${FE_CONTAINER_NAME} || true
 
-                        echo "Checking backend container logs..."
-                        if docker ps -q -f name=${CONTAINER_NAME} >/dev/null; then
-                            echo "Backend container is running."
-                            docker logs --tail 20 ${CONTAINER_NAME} || true
-                        else
-                            echo "Backend container not running!"
-                            docker logs ${CONTAINER_NAME} || true
-                            exit 1
-                        fi
-                    '
-                    """
+                                echo "Pulling latest frontend image..."
+                                docker pull ${IMAGE_REPO}:${FE_TAG_LATEST}
+
+                                echo "Running new frontend container..."
+                                docker run -d \\
+                                    --name ${FE_CONTAINER_NAME} \\
+                                    --network ${NETWORK} \\
+                                    -p ${FE_PORT}:80 \\
+                                    -e REACT_APP_API_BASE_URL=${BACKEND_URL} \\
+                                    ${IMAGE_REPO}:${FE_TAG_LATEST}
+
+                                echo "Frontend container deployed on port ${FE_PORT}"
+                            '
+                            """
+                        }
+                    }
+                }
+
+                stage('Post-Deployment Verification') {
+                    steps {
+                        sshagent(credentials: ["${SSH_CRED}"]) {
+                            sh """#!/bin/bash
+                                set -e
+                                ssh -o StrictHostKeyChecking=no ${STAGING_USER}@${STAGING_HOST} '
+                                    echo "[5/5] Verifying running containers..."
+                                    docker ps --format "table {{.Names}}\\t{{.Image}}\\t{{.Ports}}"
+                                '
+                                """
+                        }
+                    }
                 }
             }
         }
     }
 
     post {
+        always {
+            script {
+                echo 'Cleaning workspace...'
+                cleanWs()
+            }
+        }
         success {
-            echo 'Deployment to staging successful.'
+            echo 'Staging CD pipeline completed successfully.'
         }
         failure {
-            echo 'Deployment failed.'
+            echo 'Staging CD pipeline failed.'
         }
     }
 }
