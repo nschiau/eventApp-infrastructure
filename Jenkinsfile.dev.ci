@@ -54,7 +54,7 @@ pipeline {
             when { expression { currentBuild.result == null || currentBuild.result == 'SUCCESS' } }
             steps {
                 script {
-                    sh '''
+                    sh '''#!/bin/bash
                     set -e
                     export PATH=$PATH:/usr/bin
 
