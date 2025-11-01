@@ -6,7 +6,7 @@ pipeline {
 
     environment {
         DOTNET_ROOT = '/usr/share/dotnet'
-        GITHUB_TOKEN = credentials('git-scm-credentials')
+        GITHUB_TOKEN = credentials('git-token')
     }
 
     stages {
@@ -57,7 +57,7 @@ pipeline {
                     sh '''
                     echo "Processing BACKEND repository..."
                     cd backend
-                    gh auth login --with-token <<< "$GITHUB_TOKEN"
+                    gh auth login --with-token | "$GITHUB_TOKEN"
                     PR_NUM=$(gh pr list --base staging --head dev --json number --jq '.[0].number')
                     if [ -z "$PR_NUM" ]; then
                     gh pr create --base staging --head dev --title "Sync dev → staging (backend)" --body "Auto PR from Jenkins CI"
@@ -68,7 +68,7 @@ pipeline {
 
                     echo "Processing FRONTEND repository..."
                     cd frontend
-                    gh auth login --with-token <<< "$GITHUB_TOKEN"
+                    gh auth login --with-token | "$GITHUB_TOKEN"
                     PR_NUM=$(gh pr list --base staging --head dev --json number --jq '.[0].number')
                     if [ -z "$PR_NUM" ]; then
                     gh pr create --base staging --head dev --title "Sync dev → staging (frontend)" --body "Auto PR from Jenkins CI"
