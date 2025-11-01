@@ -6,7 +6,7 @@ pipeline {
 
     environment {
         DOTNET_ROOT = '/usr/share/dotnet'
-        GITHUB_TOKEN = credentials('github-token')
+        GITHUB_TOKEN = credentials('git-scm-credentials')
     }
 
     stages {
@@ -81,8 +81,10 @@ pipeline {
         }
 
         always {
-            echo 'Cleaning workspace...'
-            cleanWs()
+            script {
+                echo 'Cleaning workspace...'
+                cleanWs()
+            }
         }
     }
 }
