@@ -54,31 +54,42 @@ pipeline {
             when { expression { currentBuild.result == null || currentBuild.result == 'SUCCESS' } }
             steps {
                 script {
-                    sh '''#!/bin/bash
+                    sh '''
                     set -e
                     export PATH=$PATH:/usr/bin
 
                     echo "Verifying GitHub authentication..."
                     gh auth status || true
 
-                    echo "Processing BACKEND repository..."
-                    cd backend
-                    PR_NUM=$(gh pr list --base staging --head dev --json number --jq '.[0].number')
-                    if [ -z "$PR_NUM" ]; then
-                    gh pr create --base staging --head dev --title "Sync dev → staging (backend)" --body "Auto PR from Jenkins CI"
-                    PR_NUM=$(gh pr list --base staging --head dev --json number --jq '.[0].number')
-                    fi
-                    gh pr merge "$PR_NUM" --merge --admin --delete-branch=false
-                    cd ..
+                    for repo in backend frontend; do
+                    echo "Processing ${repo^^} repository..."
+                    cd $repo
 
-                    echo "Processing FRONTEND repository..."
-                    cd frontend
+                    # Check if there are commits to promote
+                    COMMITS=$(git fetch origin && git rev-list origin/staging..origin/dev --count)
+                    if [ "$COMMITS" -eq 0 ]; then
+                        echo "No new commits to promote for $repo, skipping PR."
+                        cd ..
+                        continue
+                    fi
+
+                    # Try to find or create a PR
                     PR_NUM=$(gh pr list --base staging --head dev --json number --jq '.[0].number')
                     if [ -z "$PR_NUM" ]; then
-                    gh pr create --base staging --head dev --title "Sync dev → staging (frontend)" --body "Auto PR from Jenkins CI"
-                    PR_NUM=$(gh pr list --base staging --head dev --json number --jq '.[0].number')
+                        gh pr create --base staging --head dev --title "Sync dev → staging ($repo)" --body "Auto PR from Jenkins CI" || true
+                        PR_NUM=$(gh pr list --base staging --head dev --json number --jq '.[0].number')
                     fi
-                    gh pr merge "$PR_NUM" --merge --admin --delete-branch=false
+
+                    if [ -z "$PR_NUM" ]; then
+                        echo "PR could not be created for $repo (no changes), skipping."
+                        cd ..
+                        continue
+                    fi
+
+                    echo "Merging PR #$PR_NUM for $repo ..."
+                    gh pr merge "$PR_NUM" --merge --admin --delete-branch=false || true
+                    cd ..
+                    done
                     '''
                 }
             }
