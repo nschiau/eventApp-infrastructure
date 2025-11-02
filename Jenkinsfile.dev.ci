@@ -32,7 +32,7 @@ pipeline {
                     sh '''
                     dotnet restore src/EventHorizon.Api/EventHorizon.Api.csproj
                     dotnet build --no-restore src/EventHorizon.Api/EventHorizon.Api.csproj --configuration Release
-                    dotnet test --verbosity normal tests/EventHorizon.Api.Tests/EventHorizon.Api.Tests.csproj
+                    dotnet test tests/EventHorizon.Api.Tests/EventHorizon.Api.Tests.csproj
                     '''
                 }
             }
