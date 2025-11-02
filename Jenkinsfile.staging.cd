@@ -172,8 +172,8 @@ pipeline {
                     steps {
                         sshagent(credentials: ["${SSH_CRED}"]) {
                             withCredentials([usernamePassword(credentialsId: "${DOCKERHUB_CREDENTIALS}",
-                        usernameVariable: 'DOCKER_USER',
-                        passwordVariable: 'DOCKER_PASS')]) {
+                            usernameVariable: 'DOCKER_USER',
+                            passwordVariable: 'DOCKER_PASS')]) {
                                 sh """#!/bin/bash
                             ssh -o StrictHostKeyChecking=no ${STAGING_USER}@${STAGING_HOST} \"bash -s\" << 'EOL'
                                 set -e
@@ -188,7 +188,7 @@ pipeline {
                                 done
 
                                 # Re-login to Docker Hub with provided credentials
-                                echo "${IMAGE_REPO}:${BE_TAG_LATEST}" | docker login -u "${DOCKER_USER}" --password-stdin
+                                echo "${DOCKER_PASS}" | docker login -u "${DOCKER_USER}" --password-stdin
 
                                 echo "Pulling latest backend image..."
                                 docker pull ${IMAGE_REPO}:${BE_TAG_LATEST}
