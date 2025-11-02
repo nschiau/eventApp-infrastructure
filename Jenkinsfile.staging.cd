@@ -10,6 +10,8 @@ pipeline {
     }
 
     environment {
+        REPO_BE = 'https://github.com/nschiau/eventApp-backend.git'
+        REPO_FE = 'https://github.com/nschiau/eventApp-frontend.git'
         DOCKERHUB_CREDENTIALS = 'dockerhub-token'
         IMAGE_REPO = 'nschiau/eventapp'
         SSH_CRED = 'staging-ssh'
@@ -35,14 +37,14 @@ pipeline {
                 stage('Checkout Backend') {
                     steps {
                         dir('backend') {
-                            git branch: 'staging', url: 'https://github.com/nschiau/eventApp-backend.git'
+                            git branch: 'staging', url: env.REPO_BE
                         }
                     }
                 }
                 stage('Checkout Frontend') {
                     steps {
                         dir('frontend') {
-                            git branch: 'staging', url: 'https://github.com/nschiau/eventApp-frontend.git'
+                            git branch: 'staging', url: env.REPO_FE
                         }
                     }
                 }
@@ -58,12 +60,12 @@ pipeline {
                     steps {
                         dir('backend') {
                             sh '''
-                set -e
-                dotnet --info
-                dotnet restore src/EventHorizon.Api/EventHorizon.Api.csproj
-                dotnet build --no-restore src/EventHorizon.Api/EventHorizon.Api.csproj --configuration Release
-                dotnet test tests/EventHorizon.Api.Tests/EventHorizon.Api.Tests.csproj
-              '''
+                            set -e
+                            dotnet --info
+                            dotnet restore src/EventHorizon.Api/EventHorizon.Api.csproj
+                            dotnet build --no-restore src/EventHorizon.Api/EventHorizon.Api.csproj --configuration Release
+                            dotnet test tests/EventHorizon.Api.Tests/EventHorizon.Api.Tests.csproj
+                        '''
                         }
                     }
                 }
@@ -71,12 +73,12 @@ pipeline {
                     steps {
                         dir('frontend') {
                             sh '''
-                set -e
-                node -v
-                npm ci || npm install
-                npm run build
-                npm test
-              '''
+                            set -e
+                            node -v
+                            npm ci || npm install
+                            npm run build
+                            npm test
+                        '''
                         }
                     }
                 }
@@ -91,9 +93,9 @@ pipeline {
                             script {
                                 // Build image with branch-specific tag
                                 def image = docker.build(
-                    "${IMAGE_REPO}:${BE_TAG_BUILD}",
-                    '-f src/EventHorizon.Api/Dockerfile .'
-                )
+                                    "${IMAGE_REPO}:${BE_TAG_BUILD}",
+                                    '-f src/EventHorizon.Api/Dockerfile .'
+                                )
 
                                 // Push both the unique tag and the staging tag
                                 docker.withRegistry('', DOCKERHUB_CREDENTIALS) {
@@ -111,9 +113,9 @@ pipeline {
                             script {
                                 // Build image using Dockerfile from repo root
                                 def image = docker.build(
-                    "${IMAGE_REPO}:${FE_TAG_BUILD}",
-                    '.'
-                )
+                                "${IMAGE_REPO}:${FE_TAG_BUILD}",
+                                '.'
+                                )
 
                                 // Push both the unique tag and the staging tag
                                 docker.withRegistry('', DOCKERHUB_CREDENTIALS) {
@@ -270,6 +272,50 @@ EOL
                                     docker ps --format "table {{.Names}}\\t{{.Image}}\\t{{.Ports}}"
                                 '
                                 """
+                        }
+                    }
+                }
+
+                stage('Promote to Production (Auto Merge)') {
+                    steps {
+                        script {
+                            def repos = [env.REPO_BE, env.REPO_FE]
+
+                            for (repoUrl in repos) {
+                                def repoName = repoUrl.split('/').last().replace('.git', '')
+                                def repo = "nschiau/${repoName}"
+
+                                echo "Checking for differences between staging and production in ${repo}..."
+
+                                sh """
+                                rm -rf tmp_repo
+                                git clone --quiet ${repoUrl} tmp_repo
+                                cd tmp_repo
+                                git fetch origin staging
+                                git fetch origin production
+                                """
+
+                                def diffCount = sh(
+                                    script: 'cd tmp_repo && git diff --name-only origin/production..origin/staging | wc -l',
+                                    returnStdout: true
+                                ).trim()
+
+                                if (diffCount.toInteger() > 0) {
+                                    echo "Found ${diffCount} file(s) different — creating PR stanging → production in ${repo}..."
+                                    sh """
+                                    cd tmp_repo
+                                    gh pr create --base production --head dev \
+                                        --title "Promote staging → production" \
+                                        --body "Automated promotion triggered by latest staging commit." \
+                                        --repo ${repo} || echo 'PR already exists'
+                                    gh pr merge staging --squash --repo ${repo} || echo 'PR already merged or not mergeable'
+                                    """
+                                } else {
+                                    echo "No unpromoted changes in ${repo}. Skipping PR creation."
+                                }
+
+                                sh 'rm -rf tmp_repo'
+                            }
                         }
                     }
                 }

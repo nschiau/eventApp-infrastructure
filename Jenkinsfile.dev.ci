@@ -5,7 +5,6 @@ pipeline {
     }
 
     environment {
-        DOTNET_ROOT = '/usr/share/dotnet'
         GITHUB_TOKEN = credentials('git-token')
         REPO_BE = 'https://github.com/nschiau/eventApp-backend.git'
         REPO_FE = 'https://github.com/nschiau/eventApp-frontend.git'
