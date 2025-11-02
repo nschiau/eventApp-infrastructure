@@ -84,7 +84,7 @@ pipeline {
                                 --title "Promote dev → staging" \
                                 --body "Automated promotion triggered by latest dev commit." \
                                 --repo ${repo} || echo 'PR already exists'
-                            gh pr merge dev --squash --auto --repo ${repo} || echo 'PR already merged or not mergeable'
+                            gh pr merge dev --squash --repo ${repo} || echo 'PR already merged or not mergeable'
                             """
                         } else {
                             echo "No unpromoted changes in ${repo}. Skipping PR creation."
