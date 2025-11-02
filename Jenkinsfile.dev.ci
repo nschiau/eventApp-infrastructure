@@ -7,13 +7,15 @@ pipeline {
     environment {
         DOTNET_ROOT = '/usr/share/dotnet'
         GITHUB_TOKEN = credentials('git-token')
+        REPO_BE = 'https://github.com/nschiau/eventApp-backend.git'
+        REPO_FE = 'https://github.com/nschiau/eventApp-frontend.git'
     }
 
     stages {
         stage('Checkout Backend') {
             steps {
                 dir('backend') {
-                    git branch: 'dev', url: 'https://github.com/nschiau/eventApp-backend.git'
+                    git branch: 'dev', url: env.REPO_BE
                 }
             }
         }
@@ -21,7 +23,7 @@ pipeline {
         stage('Checkout Frontend') {
             steps {
                 dir('frontend') {
-                    git branch: 'dev', url: 'https://github.com/nschiau/eventApp-frontend.git'
+                    git branch: 'dev', url: env.REPO_FE
                 }
             }
         }
@@ -51,32 +53,44 @@ pipeline {
         }
 
         stage('Promote to Staging (Auto Merge)') {
-            when {
-                branch 'dev'
-            }
             steps {
                 script {
-                    echo 'Checking for differences between dev and staging...'
+                    def repos = [env.REPO_BE, env.REPO_FE]
 
-                    // Fetch latest remote branches
-                    sh '''
-                    git fetch origin dev
-                    git fetch origin staging
-                    '''
+                    for (repoUrl in repos) {
+                        def repoName = repoUrl.split('/').last().replace('.git', '')
+                        def repo = "nschiau/${repoName}"
 
-                    // Check for differences
-                    def diffCount = sh(script: 'git diff --name-only origin/staging..origin/dev | wc -l', returnStdout: true).trim()
+                        echo "Checking for differences between dev and staging in ${repo}..."
 
-                    if (diffCount.toInteger() > 0) {
-                        echo "Found ${diffCount} file(s) different — creating PR..."
-                        sh '''
-                        gh pr create --base staging --head dev \
-                        --title "Promote backend changes to staging" \
-                        --body "Automated promotion triggered by latest dev commit." || echo "PR already exists"
-                        gh pr merge --merge --auto || echo "PR already merged or not mergeable"
-                        '''
-                    } else {
-                        echo 'No changes detected between dev and staging. Skipping PR creation.'
+                        sh """
+                        rm -rf tmp_repo
+                        git clone --quiet ${repoUrl} tmp_repo
+                        cd tmp_repo
+                        git fetch origin dev
+                        git fetch origin staging
+                        """
+
+                        def diffCount = sh(
+                            script: 'cd tmp_repo && git diff --name-only origin/staging..origin/dev | wc -l',
+                            returnStdout: true
+                        ).trim()
+
+                        if (diffCount.toInteger() > 0) {
+                            echo "Found ${diffCount} file(s) different — creating PR dev → staging in ${repo}..."
+                            sh """
+                            cd tmp_repo
+                            gh pr create --base staging --head dev \
+                                --title "Promote dev → staging" \
+                                --body "Automated promotion triggered by latest dev commit." \
+                                --repo ${repo} || echo 'PR already exists'
+                            gh pr merge --merge --auto --repo ${repo} || echo 'PR already merged or not mergeable'
+                            """
+                        } else {
+                            echo "No unpromoted changes in ${repo}. Skipping PR creation."
+                        }
+
+                        sh 'rm -rf tmp_repo'
                     }
                 }
             }
