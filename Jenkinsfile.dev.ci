@@ -44,7 +44,7 @@ pipeline {
                     sh '''
                     npm install
                     npm run build
-                    npm test || echo "No frontend tests configured"
+                    npm test
                     '''
                 }
             }
