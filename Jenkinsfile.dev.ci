@@ -52,31 +52,31 @@ pipeline {
 
         stage('Promote to Staging (Auto Merge)') {
             when {
-                branch 'main'
+                branch 'dev'
             }
             steps {
                 script {
-                    echo 'Checking for differences between main and staging...'
+                    echo 'Checking for differences between dev and staging...'
 
                     // Fetch latest remote branches
                     sh '''
-                    git fetch origin main
+                    git fetch origin dev
                     git fetch origin staging
                     '''
 
                     // Check for differences
-                    def diffCount = sh(script: 'git diff --name-only origin/staging..origin/main | wc -l', returnStdout: true).trim()
+                    def diffCount = sh(script: 'git diff --name-only origin/staging..origin/dev | wc -l', returnStdout: true).trim()
 
                     if (diffCount.toInteger() > 0) {
                         echo "Found ${diffCount} file(s) different — creating PR..."
                         sh '''
-                        gh pr create --base staging --head main \
+                        gh pr create --base staging --head dev \
                         --title "Promote backend changes to staging" \
-                        --body "Automated promotion triggered by latest main commit." || echo "PR already exists"
+                        --body "Automated promotion triggered by latest dev commit." || echo "PR already exists"
                         gh pr merge --merge --auto || echo "PR already merged or not mergeable"
                         '''
                     } else {
-                        echo 'No changes detected between main and staging. Skipping PR creation.'
+                        echo 'No changes detected between dev and staging. Skipping PR creation.'
                     }
                 }
             }
