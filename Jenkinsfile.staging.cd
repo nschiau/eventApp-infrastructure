@@ -292,20 +292,20 @@ EOL
                                 git clone --quiet ${repoUrl} tmp_repo
                                 cd tmp_repo
                                 git fetch origin staging
-                                git fetch origin production
+                                git fetch origin prod
                                 """
 
                                 def diffCount = sh(
-                                    script: 'cd tmp_repo && git diff --name-only origin/production..origin/staging | wc -l',
+                                    script: 'cd tmp_repo && git diff --name-only origin/prod..origin/staging | wc -l',
                                     returnStdout: true
                                 ).trim()
 
                                 if (diffCount.toInteger() > 0) {
-                                    echo "Found ${diffCount} file(s) different — creating PR stanging → production in ${repo}..."
+                                    echo "Found ${diffCount} file(s) different — creating PR stanging → prod in ${repo}..."
                                     sh """
                                     cd tmp_repo
-                                    gh pr create --base production --head dev \
-                                        --title "Promote staging → production" \
+                                    gh pr create --base prod --head dev \
+                                        --title "Promote staging → prod" \
                                         --body "Automated promotion triggered by latest staging commit." \
                                         --repo ${repo} || echo 'PR already exists'
                                     gh pr merge staging --squash --repo ${repo} || echo 'PR already merged or not mergeable'
