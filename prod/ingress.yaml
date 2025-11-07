@@ -13,7 +13,7 @@ spec:
     - host: eventapp.local
       http:
         paths:
-          # Backend – matches /api/... and strips /api before forwarding
+          # Backend — match /api/... and strip /api
           - path: /api(/|$)(.*)
             pathType: ImplementationSpecific
             backend:
@@ -22,9 +22,9 @@ spec:
                 port:
                   number: 80
 
-          # Frontend – serves everything else
-          - path: /
-            pathType: Prefix
+          # Frontend — match everything else (no rewrite)
+          - path: /(.*)
+            pathType: ImplementationSpecific
             backend:
               service:
                 name: eventapp-fe-svc
