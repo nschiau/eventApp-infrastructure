@@ -130,12 +130,26 @@ pipeline {
                                 kubectl apply -f fe-blue-deployment.yaml -n ${K8S_NAMESPACE}
                                 kubectl apply -f fe-blue-green-service.yaml -n ${K8S_NAMESPACE}
 
-                                echo "Re-applying ingress to ensure correct routing..."
-                                kubectl apply -f ingress.yaml -n ${K8S_NAMESPACE}
-
                                 echo "Frontend blue deployment and service applied."
+                                echo "Fetching frontend pods and service..."
                                 kubectl get pods -n ${K8S_NAMESPACE} -o wide | grep frontend || true
                                 kubectl get svc -n ${K8S_NAMESPACE} | grep fe || true
+                            '
+                            """
+                        }
+                    }
+                }
+
+                stage('Apply Ingress Routes') {
+                    steps {
+                        sshagent(credentials: ["${SSH_CRED}"]) {
+                            sh """
+                            ssh -o StrictHostKeyChecking=no ${PROD_USER}@${PROD_HOST} '
+                                cd /home/vagrant/eventApp-infrastructure/prod
+                                kubectl delete ingress eventapp-ingress -n eventapp-prod --ignore-not-found=true
+                                kubectl apply -f ingress-be.yaml -n eventapp-prod
+                                kubectl apply -f ingress-fe.yaml -n eventapp-prod
+                                kubectl get ingress -n eventapp-prod
                             '
                             """
                         }
