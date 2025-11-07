@@ -304,7 +304,7 @@ EOL
                                     echo "Found ${diffCount} file(s) different — creating PR stanging → prod in ${repo}..."
                                     sh """
                                     cd tmp_repo
-                                    gh pr create --base prod --head dev \
+                                    gh pr create --base prod --head staging \
                                         --title "Promote staging → prod" \
                                         --body "Automated promotion triggered by latest staging commit." \
                                         --repo ${repo} || echo 'PR already exists'
