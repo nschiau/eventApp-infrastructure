@@ -41,9 +41,14 @@ pipeline {
                             echo "[2/4] Applying PostgreSQL StatefulSet and Service..."
                             ssh -o StrictHostKeyChecking=no ${PROD_USER}@${PROD_HOST} '
                                 set -e
-                                cd ${INFRA_DIR}/prod/database
+                                # Apply namespace first (from prod folder)
+                                cd ${INFRA_DIR}/prod
                                 kubectl apply -f namespace.yaml || true
+
+                                # Apply database manifests (from prod/database folder)
+                                cd ${INFRA_DIR}/prod/database
                                 kubectl apply -f . -n ${K8S_NAMESPACE}
+
                                 echo "Database applied. Checking pods..."
                                 kubectl get pods -n ${K8S_NAMESPACE} | grep db || true
                             '
