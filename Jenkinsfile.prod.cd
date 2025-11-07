@@ -1,0 +1,104 @@
+pipeline {
+    agent any
+
+    environment {
+        SSH_CRED     = 'production-ssh'
+        PROD_HOST    = '192.168.10.17'                            // prod VM IP
+        PROD_USER    = 'vagrant'
+        REPO_INFRA   = 'https://github.com/nschiau/eventApp-infrastructure.git'
+        INFRA_DIR    = '/home/vagrant/eventApp-infrastructure'     // local repo path on prod VM
+        K8S_NAMESPACE = 'eventapp-prod'
+    }
+
+    stages {
+        stage('Deploy to Production (Blue Version)') {
+            stages {
+                stage('Clone or Update Infrastructure Repo') {
+                    steps {
+                        sshagent(credentials: ["${SSH_CRED}"]) {
+                            sh """
+                            echo "[1/4] Cloning or updating infrastructure repo on PROD VM..."
+                            ssh -o StrictHostKeyChecking=no ${PROD_USER}@${PROD_HOST} '
+                                if [ ! -d "${INFRA_DIR}/.git" ]; then
+                                    echo "Cloning repo fresh..."
+                                    git clone ${REPO_INFRA} ${INFRA_DIR}
+                                else
+                                    echo "Updating existing repo..."
+                                    cd ${INFRA_DIR}
+                                    git fetch origin
+                                    git reset --hard origin/main
+                                fi
+                            '
+                            """
+                        }
+                    }
+                }
+
+                stage('Apply Database Manifests') {
+                    steps {
+                        sshagent(credentials: ["${SSH_CRED}"]) {
+                            sh """
+                            echo "[2/4] Applying PostgreSQL StatefulSet and Service..."
+                            ssh -o StrictHostKeyChecking=no ${PROD_USER}@${PROD_HOST} '
+                                set -e
+                                cd ${INFRA_DIR}/prod/database
+                                kubectl apply -f namespace.yaml || true
+                                kubectl apply -f . -n ${K8S_NAMESPACE}
+                                echo "Database applied. Checking pods..."
+                                kubectl get pods -n ${K8S_NAMESPACE} | grep db || true
+                            '
+                            """
+                        }
+                    }
+                }
+
+                stage('Apply Backend (Blue) Deployment + Service') {
+                    steps {
+                        sshagent(credentials: ["${SSH_CRED}"]) {
+                            sh """
+                            echo "[3/4] Deploying Backend Blue version..."
+                            ssh -o StrictHostKeyChecking=no ${PROD_USER}@${PROD_HOST} '
+                                set -e
+                                cd ${INFRA_DIR}/prod
+                                kubectl apply -f be-blue-deployment.yaml -n ${K8S_NAMESPACE}
+                                kubectl apply -f be-blue-green-service.yaml -n ${K8S_NAMESPACE}
+                                echo "Backend blue deployment and service applied."
+                            '
+                            """
+                        }
+                    }
+                }
+
+                stage('Post-Deployment Verification') {
+                    steps {
+                        sshagent(credentials: ["${SSH_CRED}"]) {
+                            sh """
+                            echo "[4/4] Verifying running resources on PROD..."
+                            ssh -o StrictHostKeyChecking=no ${PROD_USER}@${PROD_HOST} '
+                                echo "--- Pods ---"
+                                kubectl get pods -n ${K8S_NAMESPACE} -o wide
+                                echo "--- Services ---"
+                                kubectl get svc -n ${K8S_NAMESPACE}
+                                echo "--- Events ---"
+                                kubectl get events -n ${K8S_NAMESPACE} --sort-by=.metadata.creationTimestamp | tail -n 10
+                            '
+                            """
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    post {
+        always {
+            cleanWs()
+        }
+        success {
+            echo 'Production deployment (Blue) completed successfully.'
+        }
+        failure {
+            echo 'Production deployment failed.'
+        }
+    }
+}

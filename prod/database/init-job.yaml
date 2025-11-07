@@ -1,0 +1,21 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: eventapp-init-db
+  namespace: eventapp-prod
+spec:
+  template:
+    spec:
+      containers:
+        - name: db-init
+          image: nschiau/eventapp:be-staging # same as backend
+          command:
+            [
+              "sh",
+              "-c",
+              "psql -h eventapp-db -U postgres -d eventhorizon -f /app/init-db.sql",
+            ]
+          env:
+            - name: PGPASSWORD
+              value: postgres
+      restartPolicy: OnFailure

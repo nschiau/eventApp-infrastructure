@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: eventapp-be-svc # switcher-service
+  namespace: eventapp-prod
+spec:
+  type: ClusterIP
+  selector:
+    app: eventapp-be
+    version: blue # <-- Initially points to the BLUE deployment
+  ports:
+    - port: 80
+      targetPort: 8080
