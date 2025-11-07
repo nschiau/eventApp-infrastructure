@@ -64,9 +64,10 @@ pipeline {
                                 echo "[Pre-deploy] Creating/Updating Docker registry secret in cluster..."
                                 ssh -o StrictHostKeyChecking=no ${PROD_USER}@${PROD_HOST} '
                                     kubectl create secret docker-registry regcred \
+                                        --docker-server=https://index.docker.io/v1/ \
                                         --docker-username="${DOCKER_USER}" \
                                         --docker-password="${DOCKER_PASS}" \
-                                        --docker-email="nicu.schiau@outlook.com" \
+                                        --docker-email="devops@example.com" \
                                         --namespace=${K8S_NAMESPACE} \
                                         --dry-run=client -o yaml | kubectl apply -f -
                                 '

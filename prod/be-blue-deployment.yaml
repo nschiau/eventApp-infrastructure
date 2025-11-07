@@ -12,6 +12,7 @@ spec:
     metadata:
       labels:
         app: eventapp-be
+        version: blue
     spec:
       imagePullSecrets:
         - name: regcred
