@@ -13,6 +13,8 @@ spec:
       labels:
         app: eventapp-be
     spec:
+      imagePullSecrets:
+        - name: regcred
       containers:
         - name: backend
           image: nschiau/eventapp:be-staging # pulled from Docker Hub

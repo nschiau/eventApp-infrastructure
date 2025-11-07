@@ -3,6 +3,7 @@ pipeline {
 
     environment {
         SSH_CRED     = 'production-ssh'
+        DOCKERHUB_CREDENTIALS = 'dockerhub-token'
         PROD_HOST    = '192.168.10.17'                            // prod VM IP
         PROD_USER    = 'vagrant'
         REPO_INFRA   = 'https://github.com/nschiau/eventApp-infrastructure.git'
@@ -49,6 +50,28 @@ pipeline {
                                 kubectl get nodes
                             '
                             """
+                        }
+                    }
+                }
+
+                stage('Create Docker Pull Secret in Kubernetes') {
+                    steps {
+                        sshagent(credentials: ["${SSH_CRED}"]) {
+                            withCredentials([usernamePassword(credentialsId: "${DOCKERHUB_CREDENTIALS}",
+                                usernameVariable: 'DOCKER_USER',
+                                passwordVariable: 'DOCKER_PASS')]) {
+                                sh """
+                                echo "[Pre-deploy] Creating/Updating Docker registry secret in cluster..."
+                                ssh -o StrictHostKeyChecking=no ${PROD_USER}@${PROD_HOST} '
+                                    kubectl create secret docker-registry regcred \
+                                        --docker-username="${DOCKER_USER}" \
+                                        --docker-password="${DOCKER_PASS}" \
+                                        --docker-email="nicu.schiau@outlook.com" \
+                                        --namespace=${K8S_NAMESPACE} \
+                                        --dry-run=client -o yaml | kubectl apply -f -
+                                '
+                                """
+                                }
                         }
                     }
                 }
