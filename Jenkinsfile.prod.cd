@@ -147,8 +147,8 @@ pipeline {
                             ssh -o StrictHostKeyChecking=no ${PROD_USER}@${PROD_HOST} '
                                 cd /home/vagrant/eventApp-infrastructure/prod
                                 kubectl delete ingress eventapp-ingress -n eventapp-prod --ignore-not-found=true
-                                kubectl apply -f ingress-be.yaml -n eventapp-prod
-                                kubectl apply -f ingress-fe.yaml -n eventapp-prod
+                                kubectl apply -f be-ingress.yaml -n eventapp-prod
+                                kubectl apply -f fe-ingress.yaml -n eventapp-prod
                                 kubectl get ingress -n eventapp-prod
                             '
                             """
