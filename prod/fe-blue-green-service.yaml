@@ -4,6 +4,7 @@ metadata:
   name: eventapp-fe-svc
   namespace: eventapp-prod
 spec:
+  type: ClusterIP
   selector:
     app: eventapp-frontend
     version: blue # initially points to BLUE version
