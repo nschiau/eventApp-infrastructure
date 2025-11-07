@@ -1,0 +1,29 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: eventapp-frontend-blue
+  namespace: eventapp-prod
+  labels:
+    app: eventapp-frontend
+    version: blue
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: eventapp-frontend
+      version: blue
+  template:
+    metadata:
+      labels:
+        app: eventapp-frontend
+        version: blue
+    spec:
+      imagePullSecrets:
+        - name: regcred # Docker Hub secret you already created
+      containers:
+        - name: frontend
+          image: nschiau/eventapp:fe-staging
+          ports:
+            - containerPort: 80
+          env:
+            - name: REACT_APP_API_BASE_URL

@@ -117,11 +117,36 @@ pipeline {
                     }
                 }
 
+                stage('Apply Frontend (Blue) Deployment + Service') {
+                    steps {
+                        sshagent(credentials: ["${SSH_CRED}"]) {
+                            sh """
+                            echo "[4/5] Deploying Frontend Blue version..."
+                            ssh -o StrictHostKeyChecking=no ${PROD_USER}@${PROD_HOST} '
+                                set -e
+                                cd ${INFRA_DIR}/prod
+
+                                echo "Applying frontend blue deployment and service..."
+                                kubectl apply -f fe-blue-deployment.yaml -n ${K8S_NAMESPACE}
+                                kubectl apply -f fe-blue-green-service.yaml -n ${K8S_NAMESPACE}
+
+                                echo "Re-applying ingress to ensure correct routing..."
+                                kubectl apply -f ingress.yaml -n ${K8S_NAMESPACE}
+
+                                echo "Frontend blue deployment and service applied."
+                                kubectl get pods -n ${K8S_NAMESPACE} -o wide | grep frontend || true
+                                kubectl get svc -n ${K8S_NAMESPACE} | grep fe || true
+                            '
+                            """
+                        }
+                    }
+                }
+
                 stage('Post-Deployment Verification') {
                     steps {
                         sshagent(credentials: ["${SSH_CRED}"]) {
                             sh """
-                            echo "[4/4] Verifying running resources on PROD..."
+                            echo "[5/5] Verifying running resources on PROD..."
                             ssh -o StrictHostKeyChecking=no ${PROD_USER}@${PROD_HOST} '
                                 echo "--- Pods ---"
                                 kubectl get pods -n ${K8S_NAMESPACE} -o wide
