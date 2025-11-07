@@ -34,6 +34,25 @@ pipeline {
                     }
                 }
 
+                stage('Ensure Minikube Running') {
+                    steps {
+                        sshagent(credentials: ["${SSH_CRED}"]) {
+                            sh """
+                            ssh -o StrictHostKeyChecking=no ${PROD_USER}@${PROD_HOST} '
+                                echo "[Pre-check] Ensuring Minikube is running..."
+                                if ! minikube status | grep -q "apiserver: Running"; then
+                                    echo "Starting Minikube..."
+                                    minikube start --driver=docker --cpus=4 --memory=8192
+                                fi
+                                kubectl config use-context minikube || true
+                                echo "Cluster ready:"
+                                kubectl get nodes
+                            '
+                            """
+                        }
+                    }
+                }
+
                 stage('Apply Database Manifests') {
                     steps {
                         sshagent(credentials: ["${SSH_CRED}"]) {
