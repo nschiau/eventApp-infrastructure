@@ -4,7 +4,8 @@ metadata:
   name: eventapp-ingress
   namespace: eventapp-prod
   annotations:
-    nginx.ingress.kubernetes.io/rewrite-target: /
+    nginx.ingress.kubernetes.io/rewrite-target: /$2
+    nginx.ingress.kubernetes.io/use-regex: "true"
     nginx.ingress.kubernetes.io/ssl-redirect: "false"
 spec:
   ingressClassName: nginx
@@ -12,16 +13,16 @@ spec:
     - host: eventapp.local
       http:
         paths:
-          # Backend — routes /api and subpaths
-          - path: /api
-            pathType: Prefix
+          # Backend – matches /api/... and strips /api before forwarding
+          - path: /api(/|$)(.*)
+            pathType: ImplementationSpecific
             backend:
               service:
                 name: eventapp-be-svc
                 port:
                   number: 80
 
-          # Frontend — routes everything else
+          # Frontend – serves everything else
           - path: /
             pathType: Prefix
             backend:
