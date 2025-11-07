@@ -5,6 +5,7 @@ metadata:
   namespace: eventapp-prod
   annotations:
     nginx.ingress.kubernetes.io/rewrite-target: /$2
+    nginx.ingress.kubernetes.io/use-regex: "true"
 spec:
   ingressClassName: nginx
   rules:
@@ -12,7 +13,7 @@ spec:
       http:
         paths:
           - path: /api(/|$)(.*)
-            pathType: Prefix
+            pathType: ImplementationSpecific
             backend:
               service:
                 name: eventapp-be-svc
