@@ -4,27 +4,86 @@ pipeline {
     environment {
         SSH_CRED     = 'production-ssh'
         DOCKERHUB_CREDENTIALS = 'dockerhub-token'
-        PROD_HOST    = '192.168.10.17'                            // prod VM IP
+        PROD_HOST    = '192.168.10.17'
         PROD_USER    = 'vagrant'
         REPO_INFRA   = 'https://github.com/nschiau/eventApp-infrastructure.git'
-        INFRA_DIR    = '/home/vagrant/eventApp-infrastructure'     // local repo path on prod VM
+        INFRA_DIR    = '/home/vagrant/eventApp-infrastructure'
         K8S_NAMESPACE = 'eventapp-prod'
+        REPO_BE = 'https://github.com/nschiau/eventApp-backend.git'
+        REPO_FE = 'https://github.com/nschiau/eventApp-frontend.git'
+        IMAGE_REPO = 'nschiau/eventapp'
+        BE_TAG_BUILD = "be-prod-${BUILD_NUMBER}"
+        FE_TAG_BUILD = "fe-prod-${BUILD_NUMBER}"
     }
 
     stages {
-        stage('Deploy to Production (Blue Version)') {
+        stage('Checkout (production branches)') {
+            parallel {
+                stage('Checkout Backend') {
+                    steps {
+                        dir('backend') {
+                            git branch: 'prod', url: env.REPO_BE
+                        }
+                    }
+                }
+                stage('Checkout Frontend') {
+                    steps {
+                        dir('frontend') {
+                            git branch: 'prod', url: env.REPO_FE
+                        }
+                    }
+                }
+            }
+        }
+
+        stage('Docker Build & Push') {
+            parallel {
+                stage('Backend Docker Image') {
+                    steps {
+                        dir('backend') {
+                            script {
+                                def image = docker.build(
+                                    "${IMAGE_REPO}:${BE_TAG_BUILD}",
+                                    '-f src/EventHorizon.Api/Dockerfile .'
+                                )
+                                docker.withRegistry('', DOCKERHUB_CREDENTIALS) {
+                                    image.push()
+                                }
+                            }
+                        }
+                    }
+                }
+
+                stage('Frontend Docker Image') {
+                    steps {
+                        dir('frontend') {
+                            script {
+                                def image = docker.build(
+                                    "${IMAGE_REPO}:${FE_TAG_BUILD}",
+                                    '.'
+                                )
+                                docker.withRegistry('', DOCKERHUB_CREDENTIALS) {
+                                    image.push()
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        stage('Deploy to Production (Blue-Green Backend)') {
             stages {
                 stage('Clone or Update Infrastructure Repo') {
                     steps {
-                        sshagent(credentials: ["${SSH_CRED}"]) {
+                        sshagent(credentials: [SSH_CRED]) {
                             sh """
-                            echo "[1/4] Cloning or updating infrastructure repo on PROD VM..."
+                            echo "[1/5] Cloning or updating infrastructure repo on PROD VM..."
                             ssh -o StrictHostKeyChecking=no ${PROD_USER}@${PROD_HOST} '
                                 if [ ! -d "${INFRA_DIR}/.git" ]; then
                                     echo "Cloning repo fresh..."
                                     git clone ${REPO_INFRA} ${INFRA_DIR}
                                 else
-                                    echo "Updating existing repo..."
                                     cd ${INFRA_DIR}
                                     git fetch origin
                                     git reset --hard origin/main
@@ -37,7 +96,7 @@ pipeline {
 
                 stage('Ensure Minikube Running') {
                     steps {
-                        sshagent(credentials: ["${SSH_CRED}"]) {
+                        sshagent(credentials: [SSH_CRED]) {
                             sh """
                             ssh -o StrictHostKeyChecking=no ${PROD_USER}@${PROD_HOST} '
                                 echo "[Pre-check] Ensuring Minikube is running..."
@@ -46,7 +105,6 @@ pipeline {
                                     minikube start --driver=docker --cpus=2 --memory=3072 --disk-size=20g --addons=ingress
                                 fi
                                 kubectl config use-context minikube || true
-                                echo "Cluster ready:"
                                 kubectl get nodes
                             '
                             """
@@ -56,7 +114,7 @@ pipeline {
 
                 stage('Create Docker Pull Secret in Kubernetes') {
                     steps {
-                        sshagent(credentials: ["${SSH_CRED}"]) {
+                        sshagent(credentials: [SSH_CRED]) {
                             withCredentials([usernamePassword(credentialsId: "${DOCKERHUB_CREDENTIALS}",
                                 usernameVariable: 'DOCKER_USER',
                                 passwordVariable: 'DOCKER_PASS')]) {
@@ -67,32 +125,27 @@ pipeline {
                                         --docker-server=https://index.docker.io/v1/ \
                                         --docker-username="${DOCKER_USER}" \
                                         --docker-password="${DOCKER_PASS}" \
-                                        --docker-email="devops@example.com" \
                                         --namespace=${K8S_NAMESPACE} \
                                         --dry-run=client -o yaml | kubectl apply -f -
                                 '
                                 """
-                                }
+                            }
                         }
                     }
                 }
 
                 stage('Apply Database Manifests') {
                     steps {
-                        sshagent(credentials: ["${SSH_CRED}"]) {
+                        sshagent(credentials: [SSH_CRED]) {
                             sh """
-                            echo "[2/4] Applying PostgreSQL StatefulSet and Service..."
+                            echo "[2/5] Applying PostgreSQL StatefulSet and Service..."
                             ssh -o StrictHostKeyChecking=no ${PROD_USER}@${PROD_HOST} '
                                 set -e
-                                # Apply namespace first (from prod folder)
                                 cd ${INFRA_DIR}/prod
-                                kubectl apply -f namespace.yaml || true
+                                kubectl apply -f namespace.yaml || true 
 
-                                # Apply database manifests (from prod/database folder)
                                 cd ${INFRA_DIR}/prod/database
                                 kubectl apply -f . -n ${K8S_NAMESPACE}
-
-                                echo "Database applied. Checking pods..."
                                 kubectl get pods -n ${K8S_NAMESPACE} | grep db || true
                             '
                             """
@@ -100,78 +153,204 @@ pipeline {
                     }
                 }
 
-                stage('Apply Backend (Blue) Deployment + Service') {
+               stage('Deploy Backend (Blue-Green)') {
                     steps {
-                        sshagent(credentials: ["${SSH_CRED}"]) {
-                            sh """
-                            echo "[3/4] Deploying Backend Blue version..."
-                            ssh -o StrictHostKeyChecking=no ${PROD_USER}@${PROD_HOST} '
-                                set -e
-                                cd ${INFRA_DIR}/prod
-                                kubectl apply -f be-blue-deployment.yaml -n ${K8S_NAMESPACE}
-                                kubectl apply -f be-blue-green-service.yaml -n ${K8S_NAMESPACE}
-                                echo "Backend blue deployment and service applied."
-                            '
-                            """
+                        sshagent(credentials: [SSH_CRED]) {
+                            script {
+                                echo "[3/5] Detecting active backend color and deploying new version..."
+
+                                // Detect which color is currently active
+                                def currentColor = sh(
+                                    script: """ssh -o StrictHostKeyChecking=no ${PROD_USER}@${PROD_HOST} \
+                                        "kubectl get svc eventapp-be-svc -n ${K8S_NAMESPACE} -o jsonpath='{.spec.selector.version}' || echo blue" """,
+                                    returnStdout: true
+                                ).trim()
+                                env.BE_CURRENT_COLOR = currentColor ?: "blue"
+                                env.BE_NEW_COLOR = (env.BE_CURRENT_COLOR == "blue") ? "green" : "blue"
+
+                                echo "Active backend color: ${BE_CURRENT_COLOR}"
+                                echo "New backend color to deploy: ${BE_NEW_COLOR}"
+
+                                // Deploy the new backend version
+                                sh """
+                                ssh -o StrictHostKeyChecking=no ${PROD_USER}@${PROD_HOST} '
+                                    set -e
+                                    cd ${INFRA_DIR}/prod
+                                    echo "Applying deployment for eventapp-be-${BE_NEW_COLOR}..."
+                                    sed -e "s/\\\${COLOR}/${BE_NEW_COLOR}/g" \
+                                        -e "s/\\\${BUILD_TAG}/${BE_TAG_BUILD}/g" \
+                                        be-deployment.yaml | kubectl apply -n ${K8S_NAMESPACE} -f -
+
+                                    echo "Waiting for rollout of eventapp-be-${BE_NEW_COLOR}..."
+                                    kubectl rollout status deployment/eventapp-be-${BE_NEW_COLOR} -n ${K8S_NAMESPACE}
+                                '
+                                """
+                            }
                         }
                     }
                 }
 
-                stage('Apply Frontend (Blue) Deployment + Service') {
+                stage('Deploy Frontend (Blue-Green)') {
                     steps {
                         sshagent(credentials: ["${SSH_CRED}"]) {
-                            sh """
-                            echo "[4/5] Deploying Frontend Blue version..."
-                            ssh -o StrictHostKeyChecking=no ${PROD_USER}@${PROD_HOST} '
-                                set -e
-                                cd ${INFRA_DIR}/prod
+                            script {
+                                echo "[4/8] Detecting active frontend color and deploying new version..."
 
-                                echo "Applying frontend blue deployment and service..."
-                                kubectl apply -f fe-blue-deployment.yaml -n ${K8S_NAMESPACE}
-                                kubectl apply -f fe-blue-green-service.yaml -n ${K8S_NAMESPACE}
+                                //Detect which color is currently active
+                                def currentColor = sh(
+                                    script: """ssh -o StrictHostKeyChecking=no ${PROD_USER}@${PROD_HOST} \
+                                        "kubectl get svc eventapp-fe-svc -n ${K8S_NAMESPACE} -o jsonpath='{.spec.selector.version}' || echo blue" """,
+                                    returnStdout: true
+                                ).trim()
+                                env.FE_CURRENT_COLOR = currentColor ?: "blue"
+                                env.FE_NEW_COLOR = (env.FE_CURRENT_COLOR == "blue") ? "green" : "blue"
 
-                                echo "Frontend blue deployment and service applied."
-                                echo "Fetching frontend pods and service..."
-                                kubectl get pods -n ${K8S_NAMESPACE} -o wide | grep frontend || true
-                                kubectl get svc -n ${K8S_NAMESPACE} | grep fe || true
-                            '
-                            """
+                                echo "Active frontend color: ${FE_CURRENT_COLOR}"
+                                echo "New frontend color to deploy: ${FE_NEW_COLOR}"
+
+                                //Deploy the new frontend version
+                                sh """
+                                ssh -o StrictHostKeyChecking=no ${PROD_USER}@${PROD_HOST} '
+                                    set -e
+                                    cd ${INFRA_DIR}/prod
+                                    echo "Applying deployment for eventapp-fe-${FE_NEW_COLOR}..."
+                                    sed -e "s/\\\${COLOR}/${FE_NEW_COLOR}/g" \
+                                        -e "s/\\\${BUILD_TAG}/${FE_TAG_BUILD}/g" \
+                                        fe-deployment.yaml | kubectl apply -n ${K8S_NAMESPACE} -f -
+
+                                    echo "Waiting for rollout of eventapp-fe-${FE_NEW_COLOR}..."
+                                    kubectl rollout status deployment/eventapp-fe-${FE_NEW_COLOR} -n ${K8S_NAMESPACE}
+                                '
+                                """
+                            }
                         }
                     }
                 }
 
                 stage('Apply Ingress Routes') {
                     steps {
-                        sshagent(credentials: ["${SSH_CRED}"]) {
+                        sshagent(credentials: [SSH_CRED]) {
                             sh """
                             ssh -o StrictHostKeyChecking=no ${PROD_USER}@${PROD_HOST} '
-                                cd /home/vagrant/eventApp-infrastructure/prod
-                                kubectl delete ingress eventapp-ingress -n eventapp-prod --ignore-not-found=true
-                                kubectl apply -f be-ingress.yaml -n eventapp-prod
-                                kubectl apply -f fe-ingress.yaml -n eventapp-prod
-                                kubectl get ingress -n eventapp-prod
+                                cd ${INFRA_DIR}/prod
+                                kubectl delete ingress eventapp-ingress -n ${K8S_NAMESPACE} --ignore-not-found=true
+                                kubectl apply -f be-ingress.yaml -n ${K8S_NAMESPACE}
+                                kubectl apply -f fe-ingress.yaml -n ${K8S_NAMESPACE}
+                                kubectl get ingress -n ${K8S_NAMESPACE}
                             '
                             """
                         }
                     }
                 }
 
-                stage('Post-Deployment Verification') {
+                stage('Verify Backend Health (New Color)') {
                     steps {
-                        sshagent(credentials: ["${SSH_CRED}"]) {
+                        sshagent(credentials: [SSH_CRED]) {
                             sh """
-                            echo "[5/5] Verifying running resources on PROD..."
                             ssh -o StrictHostKeyChecking=no ${PROD_USER}@${PROD_HOST} '
-                                echo "--- Pods ---"
-                                kubectl get pods -n ${K8S_NAMESPACE} -o wide
-                                echo "--- Services ---"
-                                kubectl get svc -n ${K8S_NAMESPACE}
-                                echo "--- Events ---"
-                                kubectl get events -n ${K8S_NAMESPACE} --sort-by=.metadata.creationTimestamp | tail -n 10
+                                BE_NEW_COLOR=$(kubectl get svc eventapp-be-svc -n ${K8S_NAMESPACE} -o jsonpath="{.spec.selector.version}")
+                                POD=$(kubectl get pods -n ${K8S_NAMESPACE} -l app=eventapp-be,version=$BE_NEW_COLOR -o jsonpath="{.items[0].metadata.name}")
+                                echo "Testing health of backend pod: $POD"
+                                kubectl exec -n ${K8S_NAMESPACE} $POD -- curl -s http://localhost:8080/health || true
                             '
                             """
                         }
                     }
+                }
+
+                stage('Verify Frontend Health (New Color)') {
+                    steps {
+                        sshagent(credentials: ["${SSH_CRED}"]) {
+                            sh """
+                            echo "[5/8] Verifying health of new Frontend deployment..."
+                            ssh -o StrictHostKeyChecking=no ${PROD_USER}@${PROD_HOST} '
+                                set -e
+                                FE_NEW_COLOR=$(kubectl get svc eventapp-fe-svc -n ${K8S_NAMESPACE} -o jsonpath="{.spec.selector.version}" 2>/dev/null || echo blue)
+                                POD=$(kubectl get pods -n ${K8S_NAMESPACE} -l app=eventapp-fe,version=$FE_NEW_COLOR -o jsonpath="{.items[0].metadata.name}" 2>/dev/null || echo "")
+                                if [ -z "$POD" ]; then
+                                    echo "No frontend pod found for color $FE_NEW_COLOR!"
+                                    exit 1
+                                fi
+                                echo "Testing health of frontend pod: $POD"
+                                kubectl exec -n ${K8S_NAMESPACE} $POD -- curl -sf http://localhost:80 || echo "Frontend health check failed!"
+                            '
+                            """
+                        }
+                    }
+                }
+
+                stage('Switch Traffic to New Color (Backend)') {
+                    steps {
+                        sshagent(credentials: [SSH_CRED]) {
+                            sh """
+                            echo "[Switching traffic to ${BE_NEW_COLOR}]"
+                            ssh -o StrictHostKeyChecking=no ${PROD_USER}@${PROD_HOST} '
+                                kubectl patch svc eventapp-be-svc -n ${K8S_NAMESPACE} \
+                                    -p "{\\"spec\\":{\\"selector\\":{\\"app\\":\\"eventapp-be\\",\\"version\\":\\"${BE_NEW_COLOR}\\"}}}"
+                            '
+                            """
+                        }
+                    }
+                }
+
+                stage('Scale Down Old Deployment (Backend)') {
+                    steps {
+                        sshagent(credentials: [SSH_CRED]) {
+                            sh """
+                            echo "[Scale down old ${BE_CURRENT_COLOR} deployment]"
+                            ssh -o StrictHostKeyChecking=no ${PROD_USER}@${PROD_HOST} '
+                                kubectl scale deployment/eventapp-be-${BE_CURRENT_COLOR} -n ${K8S_NAMESPACE} --replicas=0 || true
+                            '
+                            """
+                        }
+                    }
+                }
+
+                stage('Switch Traffic to New Color (Frontend)') {
+                    steps {
+                        sshagent(credentials: ["${SSH_CRED}"]) {
+                            sh """
+                            echo "[6/8] Switching Frontend service traffic to ${FE_NEW_COLOR}..."
+                            ssh -o StrictHostKeyChecking=no ${PROD_USER}@${PROD_HOST} '
+                                kubectl patch svc eventapp-fe-svc -n ${K8S_NAMESPACE} \
+                                    -p "{\\"spec\\":{\\"selector\\":{\\"app\\":\\"eventapp-fe\\",\\"version\\":\\"${FE_NEW_COLOR}\\"}}}"
+                                echo "✅ Traffic switched to ${FE_NEW_COLOR} frontend deployment."
+                            '
+                            """
+                        }
+                    }
+                }
+
+                stage('Scale Down Old Deployment (Frontend)') {
+                    steps {
+                        sshagent(credentials: ["${SSH_CRED}"]) {
+                            sh """
+                            echo "[7/8] Scaling down old frontend deployment (${FE_CURRENT_COLOR})..."
+                            ssh -o StrictHostKeyChecking=no ${PROD_USER}@${PROD_HOST} '
+                                kubectl scale deployment/eventapp-fe-${FE_CURRENT_COLOR} -n ${K8S_NAMESPACE} --replicas=0 || true
+                                echo "Old frontend deployment (${FE_CURRENT_COLOR}) scaled down."
+                            '
+                            """
+                        }
+                    }
+                }
+            }
+        }
+
+        stage('Post-Deployment Verification') {
+            steps {
+                sshagent(credentials: [SSH_CRED]) {
+                    sh """
+                    echo "[5/5] Verifying running resources on PROD..."
+                    ssh -o StrictHostKeyChecking=no ${PROD_USER}@${PROD_HOST} '
+                        echo "--- Pods ---"
+                        kubectl get pods -n ${K8S_NAMESPACE} -o wide
+                        echo "--- Services ---"
+                        kubectl get svc -n ${K8S_NAMESPACE}
+                        echo "--- Events ---"
+                        kubectl get events -n ${K8S_NAMESPACE} --sort-by=.metadata.creationTimestamp | tail -n 10
+                    '
+                    """
                 }
             }
         }
@@ -182,7 +361,7 @@ pipeline {
             cleanWs()
         }
         success {
-            echo 'Production deployment (Blue) completed successfully.'
+            echo 'Production Blue-Green deployment (Backend + Frontend) completed successfully.'
         }
         failure {
             echo 'Production deployment failed.'

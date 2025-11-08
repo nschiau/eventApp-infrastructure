@@ -1,28 +1,28 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: eventapp-frontend-blue
+  name: eventapp-fe-${COLOR}
   namespace: eventapp-prod
   labels:
-    app: eventapp-frontend
-    version: blue
+    app: eventapp-fe
+    version: ${COLOR}
 spec:
   replicas: 2
   selector:
     matchLabels:
-      app: eventapp-frontend
-      version: blue
+      app: eventapp-fe
+      version: ${COLOR}
   template:
     metadata:
       labels:
-        app: eventapp-frontend
-        version: blue
+        app: eventapp-fe
+        version: ${COLOR}
     spec:
       imagePullSecrets:
-        - name: regcred # Docker Hub secret you already created
+        - name: regcred # Docker Hub secret for pulling images
       containers:
         - name: frontend
-          image: nschiau/eventapp:fe-staging
+          image: nschiau/eventapp:${BUILD_TAG}
           ports:
             - containerPort: 80
           env:

@@ -6,8 +6,8 @@ metadata:
 spec:
   type: ClusterIP
   selector:
-    app: eventapp-frontend
-    version: blue # initially points to BLUE version
+    app: eventapp-fe
+    version: ${COLOR} # <-- Points dynamically to BLUE or GREEN deployment
   ports:
     - port: 80
       targetPort: 80

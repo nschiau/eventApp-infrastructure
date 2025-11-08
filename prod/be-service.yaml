@@ -7,7 +7,7 @@ spec:
   type: ClusterIP
   selector:
     app: eventapp-be
-    version: blue # <-- Initially points to the BLUE deployment
+    version: ${COLOR} # <-- Points dynamically to BLUE or GREEN deployment
   ports:
     - port: 80
       targetPort: 8080
