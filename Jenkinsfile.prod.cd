@@ -264,7 +264,7 @@ pipeline {
                                     
                                     STATUS=\$(kubectl run tmp-curl --rm -i --restart=Never \
                                         --image=curlimages/curl -n \$NAMESPACE -- \
-                                        curl -s -o /dev/null -w "%{http_code}" http://\$POD_IP:8080/health)
+                                        curl -s -o /dev/null -w "%{http_code}" http://\$POD_IP:8080/health 2>/dev/null | grep -Eo '^[0-9]{3}' | head -n1)
 
                                     echo "Healthcheck returned: [\$STATUS]"
 
