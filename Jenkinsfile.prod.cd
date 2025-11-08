@@ -247,10 +247,10 @@ pipeline {
                     steps {
                         sshagent(credentials: [SSH_CRED]) {
                             sh """
-                            echo "[Health Check] Verifying new backend pods (${BE_NEW_COLOR}) before switching traffic..."
+                            echo "[Health Check] Verifying new backend pods (\${BE_NEW_COLOR}) before switching traffic..."
                             ssh -o StrictHostKeyChecking=no ${PROD_USER}@${PROD_HOST} '
                                 set -e
-                                NEW_COLOR=${BE_NEW_COLOR}
+                                NEW_COLOR=\${BE_NEW_COLOR}
                                 POD_IP=$(kubectl get pods -n ${K8S_NAMESPACE} -l app=eventapp-be,version=$NEW_COLOR -o jsonpath="{.items[0].status.podIP}")
 
                                 if [ -z "$POD_IP" ]; then
