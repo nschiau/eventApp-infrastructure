@@ -243,21 +243,20 @@ pipeline {
                     }
                 }
 
-              stage('Verify Backend Health (New Color)') {
-                steps {
-                    sshagent(credentials: [SSH_CRED]) {
-                        sh """
-                        ssh -o StrictHostKeyChecking=no ${PROD_USER}@${PROD_HOST} '
-                            BE_NEW_COLOR=\\\$(kubectl get svc eventapp-be-svc -n ${K8S_NAMESPACE} -o jsonpath="{.spec.selector.version}")
-                            POD=\\\$(kubectl get pods -n ${K8S_NAMESPACE} -l app=eventapp-be,version=\\\$BE_NEW_COLOR -o jsonpath="{.items[0].metadata.name}")
-                            echo "Testing health of backend pod: \\\$POD"
-                            kubectl exec -n ${K8S_NAMESPACE} \\\$POD -- curl -s http://localhost:8080/health || true
-                        '
-                        """
+                stage('Verify Backend Health (New Color)') {
+                    steps {
+                        sshagent(credentials: [SSH_CRED]) {
+                            sh """
+                            ssh -o StrictHostKeyChecking=no ${PROD_USER}@${PROD_HOST} '
+                                BE_NEW_COLOR=`kubectl get svc eventapp-be-svc -n ${K8S_NAMESPACE} -o jsonpath="{.spec.selector.version}"`
+                                POD=`kubectl get pods -n ${K8S_NAMESPACE} -l app=eventapp-be,version=$BE_NEW_COLOR -o jsonpath="{.items[0].metadata.name}"`
+                                echo "Testing health of backend pod: \$POD"
+                                kubectl exec -n ${K8S_NAMESPACE} \$POD -- curl -s http://localhost:8080/health || true
+                            '
+                            """
+                        }
                     }
                 }
-            }
-
 
                 stage('Verify Frontend Health (New Color)') {
                     steps {
@@ -266,14 +265,14 @@ pipeline {
                             echo "[5/8] Verifying health of new Frontend deployment..."
                             ssh -o StrictHostKeyChecking=no ${PROD_USER}@${PROD_HOST} '
                                 set -e
-                                FE_NEW_COLOR=\\\$(kubectl get svc eventapp-fe-svc -n ${K8S_NAMESPACE} -o jsonpath="{.spec.selector.version}" 2>/dev/null || echo blue)
-                                POD=\\\$(kubectl get pods -n ${K8S_NAMESPACE} -l app=eventapp-fe,version=\\\$FE_NEW_COLOR -o jsonpath="{.items[0].metadata.name}" 2>/dev/null || echo "")
+                                FE_NEW_COLOR=`kubectl get svc eventapp-fe-svc -n ${K8S_NAMESPACE} -o jsonpath="{.spec.selector.version}" 2>/dev/null || echo blue`
+                                POD=`kubectl get pods -n ${K8S_NAMESPACE} -l app=eventapp-fe,version=$FE_NEW_COLOR -o jsonpath="{.items[0].metadata.name}" 2>/dev/null || echo ""`
                                 if [ -z "$POD" ]; then
-                                    echo "No frontend pod found for color \\\$FE_NEW_COLOR!"
+                                    echo "No frontend pod found for color $FE_NEW_COLOR!"
                                     exit 1
                                 fi
-                                echo "Testing health of frontend pod: \\\$POD"
-                                kubectl exec -n ${K8S_NAMESPACE} \\\$POD -- curl -sf http://localhost:80 || echo "Frontend health check failed!"
+                                echo "Testing health of frontend pod: $POD"
+                                kubectl exec -n ${K8S_NAMESPACE} $POD -- curl -sf http://localhost:80 || echo "Frontend health check failed!"
                             '
                             """
                         }
