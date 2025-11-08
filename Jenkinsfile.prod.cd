@@ -242,39 +242,39 @@ pipeline {
                         }
                     }
                 }
-
                 stage('Verify New Backend Pods Health (Pre-switch)') {
                     steps {
                         sshagent(credentials: [SSH_CRED]) {
                             sh """
                                 echo "[Health Check] Verifying new backend pods (${BE_NEW_COLOR}) before switching traffic..."
-                                ssh -o StrictHostKeyChecking=no ${PROD_USER}@${PROD_HOST} bash <<'EOF'
+                                ssh -o StrictHostKeyChecking=no ${PROD_USER}@${PROD_HOST} "
                                     set -e
-                                    BE_NEW_COLOR="${BE_NEW_COLOR}"
-                                    NAMESPACE="${K8S_NAMESPACE}"
-                                    echo "Verifying backend color: \$COLOR in namespace: \$NAMESPACE"
+                                    BE_NEW_COLOR='${BE_NEW_COLOR}'
+                                    NAMESPACE='${K8S_NAMESPACE}'
 
-                                    POD_IP=\$(kubectl get pods -n ${K8S_NAMESPACE} -l app=eventapp-be,version=\$BE_NEW_COLOR -o jsonpath="{.items[0].status.podIP}")
-                                    if [ -z "\$POD_IP" ]; then
-                                        echo "❌ No pod IP found for version \$BE_NEW_COLOR"
+                                    echo 'Verifying backend color:' \$BE_NEW_COLOR 'in namespace:' \$NAMESPACE
+
+                                    POD_IP=\$(kubectl get pods -n \$NAMESPACE -l app=eventapp-be,version=\$BE_NEW_COLOR -o jsonpath='{.items[0].status.podIP}')
+                                    if [ -z '\$POD_IP' ]; then
+                                        echo '❌ No pod IP found for version' \$BE_NEW_COLOR
                                         exit 1
                                     fi
 
-                                    echo "Found backend pod IP: \$POD_IP — testing /health endpoint..."
-                                    
+                                    echo 'Found backend pod IP:' \$POD_IP — 'testing /health endpoint...'
+
                                     STATUS=\$(kubectl run tmp-curl --rm -i --restart=Never \
                                         --image=curlimages/curl -n \$NAMESPACE -- \
-                                        curl -s -o /dev/null -w "%{http_code}" http://\$POD_IP:8080/health 2>/dev/null | grep -Eo '^[0-9]{3}' | head -n1)
+                                        curl -s -o /dev/null -w '%{http_code}' http://\$POD_IP:8080/health 2>/dev/null | grep -Eo '^[0-9]{3}' | head -n1)
 
-                                    echo "Healthcheck returned: [\$STATUS]"
+                                    echo 'Healthcheck returned:' [\$STATUS]
 
-                                    if [ "\$STATUS" != "200" ]; then
-                                        echo "❌ Health check failed for backend \$BE_NEW_COLOR (HTTP \$STATUS)"
+                                    if [ '\$STATUS' != '200' ]; then
+                                        echo '❌ Health check failed for backend' \$BE_NEW_COLOR '(HTTP' \$STATUS ')'
                                         exit 1
                                     fi
 
-                                    echo "✅ Backend \$BE_NEW_COLOR pods are healthy (HTTP 200)"
-                                EOF
+                                    echo '✅ Backend' \$BE_NEW_COLOR 'pods are healthy (HTTP 200)'
+                                "
                             """
                         }
                     }
