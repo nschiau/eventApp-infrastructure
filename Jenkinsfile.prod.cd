@@ -251,7 +251,8 @@ pipeline {
                                 ssh -o StrictHostKeyChecking=no ${PROD_USER}@${PROD_HOST} bash <<'EOF'
                                     set -e
                                     BE_NEW_COLOR="${BE_NEW_COLOR}"
-                                    echo "Detected new color: \$BE_NEW_COLOR"
+                                    NAMESPACE="${K8S_NAMESPACE}"
+                                    echo "Verifying backend color: \$COLOR in namespace: \$NAMESPACE"
 
                                     POD_IP=\$(kubectl get pods -n ${K8S_NAMESPACE} -l app=eventapp-be,version=\$BE_NEW_COLOR -o jsonpath="{.items[0].status.podIP}")
                                     if [ -z "\$POD_IP" ]; then
@@ -260,10 +261,12 @@ pipeline {
                                     fi
 
                                     echo "Found backend pod IP: \$POD_IP — testing /health endpoint..."
-
+                                    
                                     STATUS=\$(kubectl run tmp-curl --rm -i --restart=Never \
-                                        --image=curlimages/curl -n ${K8S_NAMESPACE} -- \
+                                        --image=curlimages/curl -n \$NAMESPACE -- \
                                         curl -s -o /dev/null -w "%{http_code}" http://\$POD_IP:8080/health)
+
+                                    echo "Healthcheck returned: [\$STATUS]"
 
                                     if [ "\$STATUS" != "200" ]; then
                                         echo "❌ Health check failed for backend \$BE_NEW_COLOR (HTTP \$STATUS)"
