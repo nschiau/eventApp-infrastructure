@@ -51,7 +51,7 @@ pipeline {
             }
         }
 
-        sstage('Promote to Staging (Auto Merge)') {
+        stage('Promote to Staging (Auto Merge)') {
             steps {
                 script {
                     def repos = [env.REPO_BE, env.REPO_FE]
