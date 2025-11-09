@@ -308,7 +308,7 @@ EOL
                                         --title "Promote staging → prod" \
                                         --body "Automated promotion triggered by latest staging commit." \
                                         --repo ${repo} || echo 'PR already exists'
-                                    gh pr merge staging --squash --repo ${repo} || echo 'PR already merged or not mergeable'
+                                    gh pr merge staging --merge --repo ${repo} || echo 'PR already merged or not mergeable'
                                     """
                                 } else {
                                     echo "No unpromoted changes in ${repo}. Skipping PR creation."
