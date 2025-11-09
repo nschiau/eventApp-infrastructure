@@ -51,7 +51,7 @@ pipeline {
             }
         }
 
-        stage('Promote to Staging (Auto Merge)') {
+        sstage('Promote to Staging (Auto Merge)') {
             steps {
                 script {
                     def repos = [env.REPO_BE, env.REPO_FE]
@@ -60,14 +60,14 @@ pipeline {
                         def repoName = repoUrl.split('/').last().replace('.git', '')
                         def repo = "nschiau/${repoName}"
 
-                        echo "Checking for differences between dev and staging in ${repo}..."
+                        echo "🔍 Checking for differences between dev and staging in ${repo}..."
 
                         sh """
-                        rm -rf tmp_repo
-                        git clone --quiet ${repoUrl} tmp_repo
-                        cd tmp_repo
-                        git fetch origin dev
-                        git fetch origin staging
+                            rm -rf tmp_repo
+                            git clone --quiet ${repoUrl} tmp_repo
+                            cd tmp_repo
+                            git fetch origin dev
+                            git fetch origin staging
                         """
 
                         def diffCount = sh(
@@ -77,16 +77,30 @@ pipeline {
 
                         if (diffCount.toInteger() > 0) {
                             echo "Found ${diffCount} file(s) different — creating PR dev → staging in ${repo}..."
+
                             sh """
-                            cd tmp_repo
-                            gh pr create --base staging --head dev \
-                                --title "Promote dev → staging" \
-                                --body "Automated promotion triggered by latest dev commit." \
-                                --repo ${repo} || echo 'PR already exists'
-                            gh pr merge dev --squash --repo ${repo} || echo 'PR already merged or not mergeable'
+                                cd tmp_repo
+                                gh pr create --base staging --head dev \
+                                    --title "Promote dev → staging" \
+                                    --body "Automated promotion triggered by Jenkins pipeline." \
+                                    --repo ${repo} || echo 'PR already exists'
+
+                                pr_id=\$(gh pr list --base staging --head dev --repo ${repo} --json number -q '.[0].number')
+                                if [ -n "\$pr_id" ]; then
+                                echo "Merging PR #\$pr_id..."
+                                gh pr merge \$pr_id --squash --admin --repo ${repo} || echo 'PR already merged or not mergeable'
+                                else
+                                echo 'No open PR found.'
+                                fi
+
+                                # Optional but recommended: ensure staging = dev exactly
+                                git fetch origin dev
+                                git checkout staging
+                                git reset --hard origin/dev
+                                git push origin staging --force
                             """
                         } else {
-                            echo "No unpromoted changes in ${repo}. Skipping PR creation."
+                            echo "✅ No unpromoted changes in ${repo}. Skipping PR creation."
                         }
 
                         sh 'rm -rf tmp_repo'
