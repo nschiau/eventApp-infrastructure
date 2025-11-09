@@ -308,7 +308,13 @@ EOL
                                         --title "Promote staging → prod" \
                                         --body "Automated promotion triggered by latest staging commit." \
                                         --repo ${repo} || echo 'PR already exists'
-                                    gh pr merge staging --merge --repo ${repo} || echo 'PR already merged or not mergeable'
+                                    pr_id=\$(gh pr list --base prod --head staging --repo ${repo} --json number -q '.[0].number')
+                                    if [ -n "\$pr_id" ]; then
+                                    echo "Merging PR #\$pr_id..."
+                                    gh pr merge \$pr_id --merge --admin --repo ${repo} || echo 'Merge failed or already merged'
+                                    else
+                                    echo 'No open PR found.'
+                                    fi
                                     """
                                 } else {
                                     echo "No unpromoted changes in ${repo}. Skipping PR creation."
