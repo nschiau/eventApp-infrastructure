@@ -13,6 +13,7 @@ pipeline {
         REPO_BE = 'https://github.com/nschiau/eventApp-backend.git'
         REPO_FE = 'https://github.com/nschiau/eventApp-frontend.git'
         DOCKERHUB_CREDENTIALS = 'dockerhub-token'
+        GITHUB_TOKEN = credentials('git-token')
         IMAGE_REPO = 'nschiau/eventapp'
         SSH_CRED = 'staging-ssh'
         STAGING_HOST = '192.168.10.16'
