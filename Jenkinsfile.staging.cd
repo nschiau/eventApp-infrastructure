@@ -311,7 +311,7 @@ EOL
                                         gh pr merge staging --merge --repo ${repo} || echo 'PR already merged or not mergeable'
                                     """
                                 } else {
-                                    echo "✅ No unpromoted changes in ${repo}. Skipping PR creation."
+                                    echo "No unpromoted changes in ${repo}. Skipping PR creation."
                                 }
 
                                 sh 'rm -rf tmp_repo'
