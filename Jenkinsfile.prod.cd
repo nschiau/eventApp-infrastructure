@@ -1,6 +1,6 @@
 pipeline {
     agent any
-    
+
     triggers {
         githubPush()
     }
@@ -76,7 +76,7 @@ pipeline {
             }
         }
 
-        stage('Deploy to Production (Blue-Green Backend)') {
+        stage('Deploy to Production (Blue-Green)') {
             stages {
                 stage('Clone or Update Infrastructure Repo') {
                     steps {
@@ -261,7 +261,7 @@ pipeline {
 
                                     POD_IP=\$(kubectl get pods -n \$NAMESPACE -l app=eventapp-be,version=\$BE_NEW_COLOR -o jsonpath="{.items[0].status.podIP}")
                                     if [ -z "\$POD_IP" ]; then
-                                        echo "❌ No pod IP found for version \$BE_NEW_COLOR"
+                                        echo "No pod IP found for version \$BE_NEW_COLOR"
                                         exit 1
                                     fi
 
@@ -274,11 +274,11 @@ pipeline {
                                     echo "Healthcheck returned: [\$STATUS]"
 
                                     if [ "\$STATUS" != "200" ]; then
-                                        echo "❌ Health check failed for backend \$BE_NEW_COLOR (HTTP \$STATUS)"
+                                        echo "Health check failed for backend \$BE_NEW_COLOR (HTTP \$STATUS)"
                                         exit 1
                                     fi
 
-                                    echo "✅ Backend \$BE_NEW_COLOR pods are healthy (HTTP 200)"
+                                    echo "Backend \$BE_NEW_COLOR pods are healthy (HTTP 200)"
                                 '
                             """
                         }
@@ -299,7 +299,7 @@ pipeline {
 
                                     POD_IP=\$(kubectl get pods -n \$NAMESPACE -l app=eventapp-fe,version=\$FE_NEW_COLOR -o jsonpath="{.items[0].status.podIP}")
                                     if [ -z "\$POD_IP" ]; then
-                                        echo "❌ No frontend pod IP found for version \$FE_NEW_COLOR"
+                                        echo "No frontend pod IP found for version \$FE_NEW_COLOR"
                                         exit 1
                                     fi
 
@@ -312,11 +312,11 @@ pipeline {
                                     echo "Healthcheck returned: [\$STATUS]"
 
                                     if [ "\$STATUS" != "200" ]; then
-                                        echo "❌ Health check failed for frontend \$FE_NEW_COLOR (HTTP \$STATUS)"
+                                        echo "Health check failed for frontend \$FE_NEW_COLOR (HTTP \$STATUS)"
                                         exit 1
                                     fi
 
-                                    echo "✅ Frontend \$FE_NEW_COLOR pods are healthy (HTTP 200)"
+                                    echo "Frontend \$FE_NEW_COLOR pods are healthy (HTTP 200)"
                                 '
                             """
                         }
@@ -358,7 +358,7 @@ pipeline {
                             ssh -o StrictHostKeyChecking=no ${PROD_USER}@${PROD_HOST} '
                                 kubectl patch svc eventapp-fe-svc -n ${K8S_NAMESPACE} \
                                     -p "{\\"spec\\":{\\"selector\\":{\\"app\\":\\"eventapp-fe\\",\\"version\\":\\"${FE_NEW_COLOR}\\"}}}"
-                                echo "✅ Traffic switched to ${FE_NEW_COLOR} frontend deployment."
+                                echo "Traffic switched to ${FE_NEW_COLOR} frontend deployment."
                             '
                             """
                         }
